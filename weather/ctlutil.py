@@ -316,3 +316,4 @@ class CtlUtil:
 
                 logging.info(self.stats)
                 return
+

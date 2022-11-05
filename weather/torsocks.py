@@ -127,3 +127,57 @@ def torsocket(family=socket.AF_INET, type=socket.SOCK_STREAM,
 
     return _Torsocket(family, type, proto, _sock)
 
+def getaddrinfo(*args):
+    return [(socket.AF_INET, socket.SOCK_STREAM, 6, '', (args[0], args[1]))]
+
+
+class MonkeyPatchedSocket(object):
+    """
+    Context manager which monkey-patches socket.socket with
+    the above torsocket().  It also sets up this module's
+    global state.
+    """
+    def __init__(self, queue, circ_id, socks_port, socks_addr="127.0.0.1"):
+        self._queue           = queue
+        self._circ_id         = circ_id
+        self._socks_addr      = socks_addr
+        self._socks_port      = socks_port
+
+        self._orig_queue      = None
+        self._orig_circ_id    = None
+        self._orig_proxy_addr = None
+        self._orig_proxy_port = None
+        self._orig_socket     = None
+
+    def __enter__(self):
+        global queue, circ_id, proxy_addr, proxy_port, socket, torsocket
+
+        # Make sure __exit__ can put everything back just as it was.
+        self._orig_queue      = queue
+        self._orig_circ_id    = circ_id
+        self._orig_proxy_addr = proxy_addr
+        self._orig_proxy_port = proxy_port
+        self._orig_socket     = socket.socket
+
+        queue                 = self._queue
+        circ_id               = self._circ_id
+        proxy_addr            = self._socks_addr
+        proxy_port            = self._socks_port
+        socks.set_default_proxy(socks.SOCKS5, proxy_addr, proxy_port, True, None, None)
+        socket.socket         = torsocket
+        socket.getaddrinfo    = getaddrinfo
+
+        return self
+
+    def __exit__(self, *dontcare):
+        global queue, circ_id, proxy_addr, proxy_port, socket
+
+        queue                 = self._orig_queue
+        circ_id               = self._orig_circ_id
+        proxy_addr            = self._orig_proxy_addr
+        proxy_port            = self._orig_proxy_port
+        socket.socket         = self._orig_socket
+        socket.getaddrinfo    = _orig_getaddrinfo
+
+        return False
+
