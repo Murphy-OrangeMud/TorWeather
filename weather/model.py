@@ -134,7 +134,18 @@ class BandwithSub(Subscription):
 
 
 class DNSFailSub(Subscription):
-    pass
+    triggered = db.Column(db.Boolean)
+    grace_pd = db.Column(db.Integer)
+    last_changed = db.Column(db.DateTime)
+
+    def __init__(self, subscriber, emailed=False, grace_pd=None, last_changed=datetime.now):
+        super().__init__(subscriber, emailed)
+
+    def is_graced_passed(self):
+        if self.triggered and hours_since(self.last_changed) >= self.grace_pd:
+            return True
+        else:
+            return False
 
 
 class DeployedDatetime(db.Model):

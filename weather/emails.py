@@ -77,3 +77,10 @@ def version_tuple(recipient, fingerprint, name, version_type, unsubs_auth,
     msg = _add_generic_footer(msg, unsubs_auth, pref_auth)
                            
     return (subj, msg, sender, [recipient])
+
+
+def dns_tuple(recipient, fingerprint, name, grace_pd, unsubs_auth, pref_auth):
+    pass
+
+
+# TODO: send email
