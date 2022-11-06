@@ -106,7 +106,7 @@ class CtlUtil:
         try:
             desc = self.control.get_server_descriptor(fingerprint)
             return desc.exit_policy.can_exit_to(port=80)
-        except stem.ControllerError, exc:
+        except stem.ControllerError as exc:
             logging.error(
                 "Unable to get server descriptor for '%s': %s" % (fingerprint, exc))
             return False

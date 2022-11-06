@@ -5,14 +5,15 @@ import re
 
 from flask import current_app
 from flask_sqlalchemy import SQLAlchemy
+from sqlalchemy import create_engine
 
 from enum import Enum
 import base64
 import os
+from config import config
 
-from sqlalchemy import ForeignKey
-
-db = SQLAlchemy(current_app)
+engine = create_engine(config.sql_alchemy_uri)
+db = SQLAlchemy()
 
 
 def insert_fingerprint_spaces(fingerprint):
@@ -35,7 +36,7 @@ class Router(db.Model):
     fingerprint = db.Column(db.String, primary_key=True, unique=True)
     name = db.Column(db.String)
     welcomed = db.Column(db.Boolean)
-    last_seen = db.Column(db.Datetime)
+    last_seen = db.Column(db.DateTime)
     up = db.Column(db.Boolean)
     exit = db.Column(db.Boolean)
 
@@ -92,6 +93,7 @@ class Subscriber(db.Model):
 
 
 class Subscription(db.Model):
+    id = db.Column(db.String, primary_key=True, unique=True)
     subscriber = db.Column(db.String, db.ForeignKey(Subscriber.email), primary_key=True)
     emailed = db.Column(db.Boolean)
 
@@ -99,6 +101,7 @@ class Subscription(db.Model):
 
     def __init__(self, subscriber, emailed=False):
         super().__init__()
+        self.id = get_rand_string()
         self.subscriber = subscriber
         self.emailed = emailed
 
@@ -119,7 +122,7 @@ class NodeDownSub(Subscription):
 
 
 class OutdatedVersionSub(Subscription):
-    notify_type = db.Column(db.String, blank=False)
+    notify_type = db.Column(db.String)
 
     def __init__(self, subscriber, emailed=False, notify_type='OBSOLETE'):
         super().__init__(subscriber, emailed)
@@ -127,30 +130,20 @@ class OutdatedVersionSub(Subscription):
 
 
 class BandwithSub(Subscription):
-    threshold = db.Column(db.Integer, blank=False)
+    threshold = db.Column(db.Integer)
 
     def __init__(self, threshold=20):
         self.threshold = threshold
 
 
 class DNSFailSub(Subscription):
-    triggered = db.Column(db.Boolean)
-    grace_pd = db.Column(db.Integer)
-    last_changed = db.Column(db.DateTime)
-
-    def __init__(self, subscriber, emailed=False, grace_pd=None, last_changed=datetime.now):
+    def __init__(self, subscriber, emailed=False):
         super().__init__(subscriber, emailed)
-
-    def is_graced_passed(self):
-        if self.triggered and hours_since(self.last_changed) >= self.grace_pd:
-            return True
-        else:
-            return False
 
 
 class DeployedDatetime(db.Model):
     
-    deployed = db.Column(db.DateTime)
+    deployed = db.Column(db.DateTime, primary_key=True)
 
     def __init__(self, deployed):
         super().__init__()

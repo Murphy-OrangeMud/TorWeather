@@ -1,6 +1,4 @@
-import config 
-
-base_url = config.base_url
+from .config import base_url
 
 _CONFIRM = '/confirm/%s/'
 _CONFIRM_PREF = '/confirm_pref/%s/'
