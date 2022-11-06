@@ -8,3 +8,9 @@ sql_alchemy_uri = "sqlite:////tmp/test.db"
 
 # TBD
 base_url = "https://127.0.0.1:5000"
+
+email_username = 'usedforatlasmurphy@gmail.com'
+email_password = 'gobluejays2022'
+
+grace_pd = 48
+threshold = 20

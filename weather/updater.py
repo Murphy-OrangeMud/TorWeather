@@ -6,6 +6,7 @@ from smtplib import SMTPException
 from weather.ctlutil import CtlUtil
 from weather.model import BandwithSub, DeployedDatetime, Subscriber, Router, NodeDownSub, OutdatedVersionSub, DNSFailSub
 from weather.model import db
+from config import config
 
 import stem.descriptor
 import stem
@@ -31,40 +32,41 @@ def get_fingerprints(cached_consensus_path, exclude=[]):
     return fingerprints
 
 
-def check_node_down(email_list):
+def check_node_down(ctl_util, email_list):
     subs = NodeDownSub.query.all()
 
     for sub in subs:
-        new_sub = sub
-        if sub.subscriber.confirmed:
-            if sub.triggered:
-                new_sub.triggered = False
-                new_sub.emailed = False
-                new_sub.last_changed = datetime.now()
+        if sub.router.subscriber.confirmed:
+            new_sub = sub
+            if sub.subscriber.router.up:
+                if sub.triggered:
+                    new_sub.triggered = False
+                    new_sub.emailed = False
+                    new_sub.last_changed = datetime.now()
 
-        else:
-            if not sub.triggered:
-                new_sub.triggered = True
-                new_sub.last_changed = datetime.now()
+            else:
+                if not sub.triggered:
+                    new_sub.triggered = True
+                    new_sub.last_changed = datetime.now()
 
-            if sub.is_grace_passed() and sub.emailed == False:
-                recipient = sub.subscriber.email
-                fingerprint = sub.subscriber.router.fingerprint
-                name = sub.subscriber.router.name
-                grace_pd = sub.grace_pd
-                unsubs_auth = sub.subscriber.unsubs_auth
-                pref_auth = sub.subscriber.pref_auth
+                if sub.is_grace_passed() and sub.emailed == False:
+                    recipient = sub.router.subscriber.email
+                    fingerprint = sub.router.fingerprint
+                    name = sub.router.name
+                    grace_pd = sub.grace_pd
+                    unsubs_auth = sub.router.subscriber.unsubs_auth
+                    pref_auth = sub.router.subscriber.pref_auth
 
-                email = emails.node_down_tuple(recipient, fingerprint, 
-                                                   name, grace_pd,          
-                                                   unsubs_auth, pref_auth)
+                    email = emails.node_down_tuple(recipient, fingerprint, 
+                                                    name, grace_pd,          
+                                                    unsubs_auth, pref_auth)
 
-                email_list.append(email)
-                new_sub.emailed = True
-        
-        db.session.delete(sub)
-        db.session.add(new_sub)
-        db.session.commit()
+                    email_list.append(email)
+                    new_sub.emailed = True
+            
+            db.session.delete(sub)
+            db.session.add(new_sub)
+            db.session.commit()
         
     return email_list
 
@@ -73,18 +75,18 @@ def check_low_bandwith(ctl_util, email_list):
     subs = BandwithSub.query.all()
 
     for sub in subs:
-        fingerprint = str(sub.subscriber.router.fingerprint)
+        fingerprint = str(sub.router.fingerprint)
         new_sub = sub
 
-        if sub.subscriber.confirmed:
+        if sub.router.subscriber.confirmed:
             bandwidth = ctl_util.get_bandwith(fingerprint)
             if bandwidth < sub.threshold:
                 if sub.emailed == False:
-                    recipient = sub.subscriber.email
-                    name = sub.subscriber.router.name
-                    threshold = sub.threshold
-                    unsubs_auth = sub.subscriber.unsubs_auth
-                    pref_auth = sub.subscriber.pref_auth
+                    recipient = sub.router.subscriber.email
+                    fingerprint = sub.router.fingerprint
+                    name = sub.router.name
+                    unsubs_auth = sub.router.subscriber.unsubs_auth
+                    pref_auth = sub.router.subscriber.pref_auth
                     email = emails.bandwidth_tuple(recipient, 
                                                     fingerprint, name, bandwidth, threshold, unsubs_auth,
                                                     pref_auth)
@@ -105,19 +107,19 @@ def check_version(ctl_util, email_list):
     subs = OutdatedVersionSub.query.all()
 
     for sub in subs:
-        if sub.subscriber.confirmed:
-            fingerprint = str(sub.subscriber.router.fingerprint)
+        if sub.router.subscriber.confirmed:
+            fingerprint = str(sub.router.fingerprint)
             version_type = ctl_util.get_version_type(fingerprint)
             new_sub = sub
 
             if version_type != 'ERROR':
                 if version_type == 'OBSOLETE':
                     if sub.emailed == False:
-                        fingerprint = sub.subscriber.router.fingerprint
-                        name = sub.subscriber.router.name
-                        recipient = sub.subscriber.email
-                        unsubs_auth = sub.subscriber.unsubs_auth
-                        pref_auth = sub.subscriber.pref_auth
+                        fingerprint = sub.router.fingerprint
+                        name = sub.router.name
+                        recipient = sub.router.subscriber.email
+                        unsubs_auth = sub.router.subscriber.unsubs_auth
+                        pref_auth = sub.router.ubscriber.pref_auth
                         email = emails.version_tuple(recipient, 
                                                     fingerprint,
                                                     name,
@@ -144,30 +146,21 @@ def check_version(ctl_util, email_list):
 def check_dns_failure(ctl_util, email_list):
     subs = DNSFailSub.query.all()
 
-    ctl_util = CtlUtil()
-
     ctl_util.setup_task()
 
     tor_directory = "/tmp/tor-weather_datadir-" + pwd.getpwuid(os.getuid())[0]
     cached_consensus_path = os.path.join(tor_directory, "cached-consensus")
 
-    fingerprints = get_fingerprints(cached_consensus_path)
+    fingerprints = ctl_util.get_finger_name_list(cached_consensus_path)
     all_hops = list(fingerprints)
 
-    sub_dict = {}
-
     for sub in subs:
-        fingerprint = str(sub.subscriber.router.fingerprint)
+        fingerprint = str(sub.router.fingerprint)
         if not ctl_util.is_exit(fingerprint):
             continue
 
         new_sub = sub
-        if sub.subscriber.confirmed:
-            sub_dict[fingerprint] = (sub.subscriber.email, 
-                                     sub.subscriber.router.name, 
-                                     sub.subscriber.unsubs_auth, 
-                                     sub.subscriber.pref_auth)
-            
+        if sub.router.subscriber.confirmed:
             try:
                 all_hops.remove(fingerprint)
             except ValueError:
@@ -182,10 +175,10 @@ def check_dns_failure(ctl_util, email_list):
             try:
                 ctl_util.control.new_circuit(hops)
             except stem.ControllerError as err:
-                recipient = sub.subscriber.email
-                name = sub.subscriber.router.name
-                unsubs_auth = sub.subscriber.unsubs_auth
-                pref_auth = sub.subscriber.pref_auth
+                recipient = sub.router.subscriber.email
+                name = sub.router.name
+                unsubs_auth = sub.router.subscriber.unsubs_auth
+                pref_auth = sub.router.subscriber.pref_auth
                 email = emails.dns_tuple(recipient, fingerprint, name, unsubs_auth, pref_auth)
                 email_list.append(email)
 
@@ -193,7 +186,11 @@ def check_dns_failure(ctl_util, email_list):
 
     fingerprint_list = ctl_util.queue_reader()
     for fpr in fingerprint_list:
-        recipient, name, unsubs_auth, pref_auth = sub_dict[fpr]
+        router = Router.query.filter_by(fingerprint=fpr).first()
+        recipient = router.subscriber.email
+        name = router.name
+        unsubs_auth = router.subscriber.unsubs_auth
+        pref_auth = router.subscriber.pref_auth
         email = emails.dns_tuple(recipient, fingerprint, name, unsubs_auth, pref_auth)
         email_list.append(email)
 
@@ -277,11 +274,10 @@ def run_all():
     email_list = update_all_routers(ctl_util, email_list)
     email_list = check_all_subs(ctl_util, email_list)
 
-    # TODO: send mass email
     current_app.config['MAIL_SERVER'] = 'smtp.gmail.com'
     current_app.config['MAIL_PORT'] = 465
-    current_app.config['MAIL_USERNAME'] = ''
-    current_app.config['MAIL_PASSWORD'] = ''
+    current_app.config['MAIL_USERNAME'] = config.email_username
+    current_app.config['MAIL_PASSWORD'] = config.email_password
     current_app.config['MAIL_USE_TLS'] = False
     current_app.config['MAIL_USE_SSL'] = True
 

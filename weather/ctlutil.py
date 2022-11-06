@@ -124,7 +124,7 @@ class CtlUtil:
         try:
             desc = self.control.get_network_status(fingerprint)
             return Flag.Stable in desc.flags
-        except stem.ControllerError(e):
+        except stem.ControllerError:
             return False
 
     def is_hibernating(self, fingerprint):

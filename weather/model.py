@@ -42,7 +42,7 @@ class Router(db.Model):
 
     subscriber_id = db.Column(db.String, db.ForeignKey('subscriber.email'))
 
-    subscriptions = db.relationship('Subscription', backref='router', lazy=True)
+    subscriptions = db.relationship('Subscription', backref='router', lazy='dynamic')
 
     def __init__(self, fingerprint=None,
                        subscriber=None,
@@ -78,10 +78,10 @@ class Subscriber(db.Model):
     pref_auth = db.Column(db.String)
     sub_date = db.Column(db.DateTime)
 
-    routers = db.relationship('Router', backref='subscriber', lazy=True)
+    routers = db.relationship('Router', backref='subscriber', lazy='dynamic')
 
     def __init__(self, email=None,
-                       confirmed=False,
+                       confirmed=True,  # TODO: add confirming mechanism in flask app
                        confirm_auth=None,
                        unsubs_auth=None,
                        pref_auth=None):
@@ -124,7 +124,7 @@ class NodeDownSub(Subscription):
     grace_pd = db.Column(db.Integer)
     last_changed = db.Column(db.DateTime)
 
-    def __init__(self, router, emailed=False, grace_pd=None, last_changed=None):
+    def __init__(self, router, emailed=False, grace_pd=config.grace_pd, last_changed=None):
         super().__init__(router, emailed)
         self.grace_pd = grace_pd
         if last_changed is None:

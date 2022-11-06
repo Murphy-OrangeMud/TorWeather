@@ -68,7 +68,7 @@ def subscribe():
             try:
                 grace_pd = json["node_down_grace_pd"]
             except:
-                grace_pd = None
+                grace_pd = config.grace_pd
             node_down_sub = NodeDownSub(router=fingerprint, grace_pd=grace_pd)
             db.session.add(node_down_sub)
             db.session.commit()
@@ -127,7 +127,7 @@ def unsubscribe():
             unsub_dns_fail = False
 
         if unsub_node_down:
-            sub = NodeDownSub.query.filter_by(router=fingerprint)
+            sub = NodeDownSub.query.filter_by(router=fingerprint).all()
             if len(sub) == 0:
                 return jsonify({"status": "Error", "msg": "No node down subscription found"}), 401
             else:
@@ -135,7 +135,7 @@ def unsubscribe():
                 db.session.commit()
         
         if unsub_version:
-            sub = OutdatedVersionSub.query.filter_by(router=fingerprint)
+            sub = OutdatedVersionSub.query.filter_by(router=fingerprint).all()
             if len(sub) == 0:
                 return jsonify({"status": "Error", "msg": "No outdated version subscription found"}), 401
             else:
@@ -143,7 +143,7 @@ def unsubscribe():
                 db.session.commit()
         
         if unsub_low_bandwidth:
-            sub = BandwithSub.query.filter_by(router=fingerprint)
+            sub = BandwithSub.query.filter_by(router=fingerprint).all()
             if len(sub) == 0:
                 return jsonify({"status": "Error", "msg": "No low bandwidth subscription found"}), 401
             else:
@@ -151,7 +151,7 @@ def unsubscribe():
                 db.session.commit()
 
         if unsub_dns_fail:
-            sub = DNSFailSub.query.filter_by(router=fingerprint)
+            sub = DNSFailSub.query.filter_by(router=fingerprint).all()
             if len(sub) == 0:
                 return jsonify({"status": "Error", "msg": "No dns failure subscription found"}), 401
             else:
@@ -181,7 +181,7 @@ def update():
                     grace_pd = None
                 else:
                     grace_pd = eval(json["grace_pd"])
-                sub = NodeDownSub.query.filter_by(router=fingerprint)
+                sub = NodeDownSub.query.filter_by(router=fingerprint).all()
                 if len(sub) == 0:
                     sub = NodeDownSub(router=fingerprint, grace_pd=grace_pd)
                     db.session.add(sub)
@@ -193,7 +193,7 @@ def update():
                     db.session.add(new_sub)
                     db.session.commit()
             else:
-                sub = NodeDownSub.query.filter_by(router=fingerprint)
+                sub = NodeDownSub.query.filter_by(router=fingerprint).all()
                 if len(sub) > 0:
                     sub = sub[0]
                     db.session.delete(sub)
@@ -204,13 +204,13 @@ def update():
         try:
             get_version = eval(json["get_version"])
             if get_version:
-                sub = OutdatedVersionSub.query.filter_by(router=fingerprint)
+                sub = OutdatedVersionSub.query.filter_by(router=fingerprint).all()
                 if len(sub) == 0:
                     sub = OutdatedVersionSub(router=fingerprint)
                     db.session.add(sub)
                     db.session.commit()
             else:
-                sub = OutdatedVersionSub.query.filter_by(router=fingerprint)
+                sub = OutdatedVersionSub.query.filter_by(router=fingerprint).all()
                 if len(sub) > 0:
                     sub = sub[0]
                     db.session.delete(sub)
@@ -225,7 +225,7 @@ def update():
             else:
                 band_low_threshold = eval(json["band_low_threshold"])
             if get_low_bandwidth:
-                sub = BandwithSub.query.filter_by(router=fingerprint)
+                sub = BandwithSub.query.filter_by(router=fingerprint).all()
                 if len(sub) == 0:
                     sub = BandwithSub(router=fingerprint, threshold=band_low_threshold)
                     db.session.add(sub)
@@ -237,7 +237,7 @@ def update():
                     db.session.add(new_sub)
                     db.session.commit()
             else:
-                sub = BandwithSub.query.filter_by(router=fingerprint)
+                sub = BandwithSub.query.filter_by(router=fingerprint).all()
                 if len(sub) > 0:
                     sub = sub[0]
                     db.session.delete(sub)
@@ -248,13 +248,13 @@ def update():
         try:
             get_dns_fail = eval(json["get_dns_fail"])
             if get_dns_fail:
-                sub = DNSFailSub.query.filter_by(router=fingerprint)
+                sub = DNSFailSub.query.filter_by(router=fingerprint).all()
                 if len(sub) == 0:
                     sub = DNSFailSub(router=fingerprint)
                     db.session.add(sub)
                     db.session.commit()
             else:
-                sub = DNSFailSub.query.filter_by(router=fingerprint)
+                sub = DNSFailSub.query.filter_by(router=fingerprint).all()
                 if len(sub) > 0:
                     sub = sub[0]
                     db.session.delete(sub)
