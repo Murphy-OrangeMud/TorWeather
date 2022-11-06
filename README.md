@@ -25,11 +25,11 @@
 Plan: In the form of cronjob
 
 TODO:
-[] Test the module of sending emails
-[] Test the module of checking node down
-[] Test the module of checking dns failure
-[] Test the module of outdated version
-[] Test the module of checking low bandwidth
+[ ] Test the module of sending emails
+[ ] Test the module of checking node down
+[ ] Test the module of checking dns failure
+[ ] Test the module of outdated version
+[ ] Test the module of checking low bandwidth
 
 +] Running 8/8
  ⠿ Container private-tor-network-exit-1    Stopped                         0.4s

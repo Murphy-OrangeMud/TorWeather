@@ -4,8 +4,11 @@ import email
 import re
 
 from flask import current_app
-from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy import create_engine
+from sqlalchemy.orm import scoped_session, sessionmaker
+from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy import Column, Integer, String, DateTime, Boolean, ForeignKey, MetaData
+from sqlalchemy.orm import relation
 
 from enum import Enum
 import base64
@@ -13,8 +16,10 @@ import os
 from config import config
 
 engine = create_engine(config.sql_alchemy_uri)
-db = SQLAlchemy()
+# db_session = scoped_session(sessionmaker(autocommit=False, autoflush=False, bind=engine))
 
+Base = declarative_base()
+Session = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 def insert_fingerprint_spaces(fingerprint):
     return ' '.join(re.findall('.{4}', str(fingerprint)))
@@ -32,17 +37,20 @@ def hours_since(time):
     return hours
 
 
-class Router(db.Model):
-    fingerprint = db.Column(db.String, primary_key=True, unique=True)
-    name = db.Column(db.String)
-    welcomed = db.Column(db.Boolean)
-    last_seen = db.Column(db.DateTime)
-    up = db.Column(db.Boolean)
-    exit = db.Column(db.Boolean)
+class Router(Base):
 
-    subscriber_id = db.Column(db.String, db.ForeignKey('subscriber.email'))
+    __tablename__ = "router"
 
-    subscriptions = db.relationship('Subscription', backref='router', lazy='dynamic')
+    fingerprint = Column(String, primary_key=True, unique=True)
+    name = Column(String)
+    welcomed = Column(Boolean)
+    last_seen = Column(DateTime)
+    up = Column(Boolean)
+    exit = Column(Boolean)
+
+    subscriber_id = Column(String, ForeignKey('subscriber.email'))
+
+    subscriptions = relation('Subscription', backref='router', lazy='dynamic')
 
     def __init__(self, fingerprint=None,
                        subscriber=None,
@@ -69,16 +77,19 @@ class Router(db.Model):
         return insert_fingerprint_spaces(self.fingerprint)
 
 
-class Subscriber(db.Model):
-    email = db.Column(db.String, primary_key=True, unique=True)
-    # router = db.Column(db.String, db.ForeignKey(Router.fingerprint), primary_key=True)
-    confirmed = db.Column(db.Boolean)
-    confirm_auth = db.Column(db.String)
-    unsubs_auth = db.Column(db.String)
-    pref_auth = db.Column(db.String)
-    sub_date = db.Column(db.DateTime)
+class Subscriber(Base):
 
-    routers = db.relationship('Router', backref='subscriber', lazy='dynamic')
+    __tablename__ = "subscriber"
+
+    email = Column(String, primary_key=True, unique=True)
+    # router = Column(String, ForeignKey(Router.fingerprint), primary_key=True)
+    confirmed = Column(Boolean)
+    confirm_auth = Column(String)
+    unsubs_auth = Column(String)
+    pref_auth = Column(String)
+    sub_date = Column(DateTime)
+
+    routers = relation('Router', backref='subscriber', lazy='dynamic')
 
     def __init__(self, email=None,
                        confirmed=True,  # TODO: add confirming mechanism in flask app
@@ -103,14 +114,17 @@ class Subscriber(db.Model):
         return self.email
 
 
-class Subscription(db.Model):
-    id = db.Column(db.String, primary_key=True, unique=True)
-    # subscriber_id = db.Column(db.String, db.ForeignKey(Subscriber.email))
-    router_id = db.Column(db.String, db.ForeignKey(Router.fingerprint))
-    emailed = db.Column(db.Boolean)
+class Subscription(Base):
 
-    # subscriber_id = db.relationship('Subscriber', foreign_keys='Subscriber.email')
-    # router_id = db.relationship('Router', foreign_keys='Rrouer.fingerprint')
+    __tablename__ = "subscription"
+
+    id = Column(String, primary_key=True, unique=True)
+    # subscriber_id = Column(String, ForeignKey(Subscriber.email))
+    router_id = Column(String, ForeignKey(Router.fingerprint))
+    emailed = Column(Boolean)
+
+    # subscriber_id = relation('Subscriber', foreign_keys='Subscriber.email')
+    # router_id = relation('Router', foreign_keys='Rrouer.fingerprint')
 
     def __init__(self, router, emailed=False):
         super().__init__()
@@ -120,9 +134,9 @@ class Subscription(db.Model):
 
 
 class NodeDownSub(Subscription):
-    triggered = db.Column(db.Boolean)
-    grace_pd = db.Column(db.Integer)
-    last_changed = db.Column(db.DateTime)
+    triggered = Column(Boolean)
+    grace_pd = Column(Integer)
+    last_changed = Column(DateTime)
 
     def __init__(self, router, emailed=False, grace_pd=config.grace_pd, last_changed=None):
         super().__init__(router, emailed)
@@ -131,15 +145,9 @@ class NodeDownSub(Subscription):
             last_changed = datetime.now()
         self.last_changed = last_changed
 
-    def is_graced_passed(self):
-        if self.triggered and hours_since(self.last_changed) >= self.grace_pd:
-            return True
-        else:
-            return False
-
 
 class OutdatedVersionSub(Subscription):
-    notify_type = db.Column(db.String)
+    notify_type = Column(String)
 
     def __init__(self, router, emailed=False, notify_type='OBSOLETE'):
         super().__init__(router, emailed)
@@ -147,7 +155,7 @@ class OutdatedVersionSub(Subscription):
 
 
 class BandwithSub(Subscription):
-    threshold = db.Column(db.Integer)
+    threshold = Column(Integer)
 
     def __init__(self, router, emailed=False, threshold=20):
         super().__init__(router, emailed)
@@ -159,9 +167,11 @@ class DNSFailSub(Subscription):
         super().__init__(router, emailed)
 
 
-class DeployedDatetime(db.Model):
+class DeployedDatetime(Base):
+
+    __tablename__ = "deployeddatetime"
     
-    deployed = db.Column(db.DateTime, primary_key=True)
+    deployed = Column(DateTime, primary_key=True)
 
     def __init__(self, deployed):
         super().__init__()
@@ -170,3 +180,5 @@ class DeployedDatetime(db.Model):
     def __repr__(self):
         return self.deployed
 
+def init_db():
+    Base.metadata.create_all(engine)

@@ -1,4 +1,4 @@
-from weather.model import insert_fingerprint_spaces
+from model import insert_fingerprint_spaces
 from config import url_helper
 
 

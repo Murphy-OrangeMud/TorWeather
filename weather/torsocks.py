@@ -6,7 +6,7 @@ import errno
 import logging
 import _socket
 import socks
-from . import error
+import error
 
 proxy_addr = None
 proxy_port = None
