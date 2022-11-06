@@ -20,9 +20,9 @@ def insert_fingerprint_spaces(fingerprint):
     return ' '.join(re.findall('.{4}', str(fingerprint)))
 
 def get_rand_string():
-    r = base64.urlsafe_b64decode(os.urandom(18))
+    r = base64.urlsafe_b64encode(os.urandom(18))
 
-    if r.endswith("-"):
+    if r.endswith(bytes("-", encoding='utf-8')):
         r = r.replace("-", "x")
     return r
 
@@ -40,19 +40,27 @@ class Router(db.Model):
     up = db.Column(db.Boolean)
     exit = db.Column(db.Boolean)
 
+    subscriber_id = db.Column(db.String, db.ForeignKey('subscriber.email'))
+
+    subscriptions = db.relationship('Subscription', backref='router', lazy=True)
+
     def __init__(self, fingerprint=None,
+                       subscriber=None,
                        name='Unnamed',
                        welcomed=False,
-                       last_seen=datetime.now,
+                       last_seen=None,
                        up=True,
                        exit=False):
         super().__init__()
         self.fingerprint = fingerprint
         self.welcomed = welcomed
         self.name = name
+        if last_seen is None:
+            last_seen = datetime.now()
         self.last_seen = last_seen
         self.up = up
         self.exit = exit
+        self.subscriber_id = subscriber
 
     def __repr__(self):
         return self.name + ": " + self._spaced_fingerprint()
@@ -63,30 +71,33 @@ class Router(db.Model):
 
 class Subscriber(db.Model):
     email = db.Column(db.String, primary_key=True, unique=True)
-    router = db.Column(db.String, db.ForeignKey(Router.fingerprint), primary_key=True)
+    # router = db.Column(db.String, db.ForeignKey(Router.fingerprint), primary_key=True)
     confirmed = db.Column(db.Boolean)
     confirm_auth = db.Column(db.String)
     unsubs_auth = db.Column(db.String)
     pref_auth = db.Column(db.String)
     sub_date = db.Column(db.DateTime)
 
-    router = db.relationship('Router', foreign_keys='Router.fingerprint')
+    routers = db.relationship('Router', backref='subscriber', lazy=True)
 
     def __init__(self, email=None,
-                       router=None,
                        confirmed=False,
-                       confirm_auth=get_rand_string,
-                       unsubs_auth=get_rand_string,
-                       pref_auth=get_rand_string,
-                       sub_date=datetime.now):
+                       confirm_auth=None,
+                       unsubs_auth=None,
+                       pref_auth=None):
         super().__init__()
         self.email = email
-        self.router = router
         self.confirmed = confirmed
+        if confirm_auth is None:
+            confirm_auth = get_rand_string()
         self.confirm_auth = confirm_auth
+        if unsubs_auth is None:
+            unsubs_auth = get_rand_string()
         self.unsubs_auth = unsubs_auth
+        if pref_auth is None:
+            pref_auth = get_rand_string()
         self.pref_auth = pref_auth
-        self.sub_date = sub_date
+        self.sub_date = datetime.now()
 
     def __repr__(self):
         return self.email
@@ -94,15 +105,17 @@ class Subscriber(db.Model):
 
 class Subscription(db.Model):
     id = db.Column(db.String, primary_key=True, unique=True)
-    subscriber = db.Column(db.String, db.ForeignKey(Subscriber.email), primary_key=True)
+    # subscriber_id = db.Column(db.String, db.ForeignKey(Subscriber.email))
+    router_id = db.Column(db.String, db.ForeignKey(Router.fingerprint))
     emailed = db.Column(db.Boolean)
 
-    subscriber = db.relationship('Subscriber', foreign_keys='Subscriber.email')
+    # subscriber_id = db.relationship('Subscriber', foreign_keys='Subscriber.email')
+    # router_id = db.relationship('Router', foreign_keys='Rrouer.fingerprint')
 
-    def __init__(self, subscriber, emailed=False):
+    def __init__(self, router, emailed=False):
         super().__init__()
         self.id = get_rand_string()
-        self.subscriber = subscriber
+        self.router_id = router
         self.emailed = emailed
 
 
@@ -111,8 +124,12 @@ class NodeDownSub(Subscription):
     grace_pd = db.Column(db.Integer)
     last_changed = db.Column(db.DateTime)
 
-    def __init__(self, subscriber, emailed=False, grace_pd=None, last_changed=datetime.now):
-        super().__init__(subscriber, emailed)
+    def __init__(self, router, emailed=False, grace_pd=None, last_changed=None):
+        super().__init__(router, emailed)
+        self.grace_pd = grace_pd
+        if last_changed is None:
+            last_changed = datetime.now()
+        self.last_changed = last_changed
 
     def is_graced_passed(self):
         if self.triggered and hours_since(self.last_changed) >= self.grace_pd:
@@ -124,21 +141,22 @@ class NodeDownSub(Subscription):
 class OutdatedVersionSub(Subscription):
     notify_type = db.Column(db.String)
 
-    def __init__(self, subscriber, emailed=False, notify_type='OBSOLETE'):
-        super().__init__(subscriber, emailed)
+    def __init__(self, router, emailed=False, notify_type='OBSOLETE'):
+        super().__init__(router, emailed)
         self.notify_type = notify_type
 
 
 class BandwithSub(Subscription):
     threshold = db.Column(db.Integer)
 
-    def __init__(self, threshold=20):
+    def __init__(self, router, emailed=False, threshold=20):
+        super().__init__(router, emailed)
         self.threshold = threshold
 
 
 class DNSFailSub(Subscription):
-    def __init__(self, subscriber, emailed=False):
-        super().__init__(subscriber, emailed)
+    def __init__(self, router, emailed=False):
+        super().__init__(router, emailed)
 
 
 class DeployedDatetime(db.Model):

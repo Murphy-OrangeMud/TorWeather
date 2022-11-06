@@ -51,7 +51,7 @@ class CtlUtil:
                 "Unable to connect to tor's control port: %s" % self.control_port)
             raise Exception
 
-        self.control.authenticate(config.authenticator)
+        self.control.authenticate(self.authenticator)
         self.destinations = None
         self.domains = {
             "www.youporn.com": [],
