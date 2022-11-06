@@ -14,7 +14,6 @@ from stem.control import Controller
 from config import config
 
 import dns.resolver
-from test import resolve_exit
 import torsocks
 import socket
 import error
@@ -200,15 +199,16 @@ class CtlUtil:
             return
 
         def dns_detector():
+            flag = False
             try:
                 try:
-                    with torsocks.MonkeyPatchedSocket(self.queue, circ_event.id, socks_port):
-                        resolve_exit()
+                    with torsocks.MonkeyPatchedSocket(self.queue, circ_event.id):
+                        flag = self.resolve_exit()
                 except (error.SOCKSv5Error, socket.error) as err:
                     logging.info(err)
                 
                 logging.debug("Informing event handler that module finished.")
-                self.queue.put((circ_event.id, None)) # TODO: what to put: the result of resolve_exit
+                self.queue.put((circ_event.id, None, flag, exit_fingerprint)) # TODO: what to put: the result of resolve_exit
             except KeyboardInterrupt:
                 pass
 
@@ -264,15 +264,18 @@ class CtlUtil:
             logging.warning("Failed to attach stream because: %s" % err)
 
     def queue_reader(self):
+        fingerprint_list = []
         while True:
             try:
-                circ_id, sockname = self.queue.get()
+                circ_id, sockname, flag, exit_fingerprint = self.queue.get()
             except EOFError:
                 logging.debug("IPC queue terminated.")
                 break
 
             if sockname is None:
                 logging.debug("Closing finished circuit %s." % circ_id)
+                if flag == False:
+                    fingerprint_list.append(exit_fingerprint)
                 try:
                     self.control.close_circuit(circ_id)
                 except stem.InvalidArguments as err:
@@ -284,6 +287,11 @@ class CtlUtil:
                 port = int(sockname[1])
                 self.attach_stream_to_circuit_prepare(port, circuit_id=circ_id)
                 self.check_finished()
+
+            if self.already_finished:
+                break
+        
+        return fingerprint_list
 
     def check_finished(self):
         with self.check_finished_lock:

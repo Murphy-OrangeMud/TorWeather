@@ -8,8 +8,8 @@ import _socket
 import socks
 from . import error
 
-proxy_addr = "127.0.0.1"
-proxy_port = 9052
+proxy_addr = None
+proxy_port = None
 queue = None
 circ_id = None
 
@@ -137,7 +137,7 @@ class MonkeyPatchedSocket(object):
     the above torsocket().  It also sets up this module's
     global state.
     """
-    def __init__(self, queue, circ_id, socks_port, socks_addr="127.0.0.1"):
+    def __init__(self, queue, circ_id, socks_port=9051, socks_addr="127.0.0.1"):
         self._queue           = queue
         self._circ_id         = circ_id
         self._socks_addr      = socks_addr

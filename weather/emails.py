@@ -24,6 +24,12 @@ _VERSION_MAIL = "This is a Tor Weather Report.\n\n"+\
     "is running an %s version of Tor. You can download the "+\
     "latest version of Tor at %s."
 
+_DNS_FAIL_SUBJ = 'Failed to Resolve Hostnames!'
+_DNS_FAIL_MAIL = "This is a Tor Weather Report.\n\n"+\
+    "It appears that the node %s you've been observing " +\
+    "has been failing to resolve hostnames and has DNS poisoned." +\
+    "You may wish to look at it and fix."
+
 _GENERIC_FOOTER = "\n\nYou can unsubscribe from these reports at any time "+\
     "by visiting the following url:\n\n%s\n\nor change your Tor Weather "+\
     "notification preferences here: \n\n%s"
@@ -43,8 +49,7 @@ def _get_router_name(fingerprint, name):
     else:
         return "%s (id: %s)" % (name, spaced_fingerprint)
 
-def bandwidth_tuple(recipient, fingerprint, name,  observed, threshold,
-                    unsubs_auth, pref_auth):
+def bandwidth_tuple(recipient, fingerprint, name,  observed, threshold, unsubs_auth, pref_auth):
     router = _get_router_name(fingerprint, name)
     subj = _SUBJECT_HEADER + _LOW_BANDWIDTH_SUBJ
     sender = _SENDER
@@ -52,9 +57,10 @@ def bandwidth_tuple(recipient, fingerprint, name,  observed, threshold,
     msg = _LOW_BANDWIDTH_MAIL % (router, observed, threshold)
     msg = _add_generic_footer(msg, unsubs_auth, pref_auth)
 
+    return (subj, msg, sender, [recipient])
 
-def node_down_tuple(recipient, fingerprint, name, grace_pd, unsubs_auth, 
-                    pref_auth):
+
+def node_down_tuple(recipient, fingerprint, name, grace_pd, unsubs_auth, pref_auth):
     router = _get_router_name(fingerprint, name)
     subj = _SUBJECT_HEADER + _NODE_DOWN_SUBJ
     sender = _SENDER
@@ -66,8 +72,7 @@ def node_down_tuple(recipient, fingerprint, name, grace_pd, unsubs_auth,
     return (subj, msg, sender, [recipient])
 
 
-def version_tuple(recipient, fingerprint, name, version_type, unsubs_auth, 
-                  pref_auth):
+def version_tuple(recipient, fingerprint, name, version_type, unsubs_auth, pref_auth):
     router = _get_router_name(fingerprint, name)
     subj = _SUBJECT_HEADER + _VERSION_SUBJ
     sender = _SENDER
@@ -79,8 +84,11 @@ def version_tuple(recipient, fingerprint, name, version_type, unsubs_auth,
     return (subj, msg, sender, [recipient])
 
 
-def dns_tuple(recipient, fingerprint, name, grace_pd, unsubs_auth, pref_auth):
-    pass
+def dns_tuple(recipient, fingerprint, name, unsubs_auth, pref_auth):
+    router = _get_router_name(fingerprint, name)
+    subj = _SUBJECT_HEADER + _DNS_FAIL_SUBJ
+    sender = _SENDER
+    msg = _DNS_FAIL_MAIL % router
+    msg = _add_generic_footer(msg, unsubs_auth, pref_auth)
+    return (subj, msg, sender, [recipient])
 
-
-# TODO: send email

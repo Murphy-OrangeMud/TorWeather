@@ -1,4 +1,5 @@
 from datetime import datetime
+from email.message import Message
 import logging
 from smtplib import SMTPException
 
@@ -6,14 +7,36 @@ from weather.ctlutil import CtlUtil
 from weather.model import BandwithSub, DeployedDatetime, Subscriber, Router, NodeDownSub, OutdatedVersionSub, DNSFailSub
 from weather.model import db
 
+import stem.descriptor
+import stem
+
 import emails
+
+import os
+import pwd
+import random
+import time
+
+from flask import current_app
+from flask_mail import Mail, Message
+
+
+def get_fingerprints(cached_consensus_path, exclude=[]):
+    fingerprints = []
+
+    for desc in stem.descriptor.parse_file(cached_consensus_path):
+        if desc.fingerprint not in exclude:
+            fingerprints.append(desc.fingerprint)
+
+    return fingerprints
+
 
 def check_node_down(email_list):
     subs = NodeDownSub.query.all()
 
     for sub in subs:
         new_sub = sub
-        if sub.subscriber.confirmed():
+        if sub.subscriber.confirmed:
             if sub.triggered:
                 new_sub.triggered = False
                 new_sub.emailed = False
@@ -119,7 +142,60 @@ def check_version(ctl_util, email_list):
 
 
 def check_dns_failure(ctl_util, email_list):
-    pass
+    subs = DNSFailSub.query.all()
+
+    ctl_util = CtlUtil()
+
+    ctl_util.setup_task()
+
+    tor_directory = "/tmp/tor-weather_datadir-" + pwd.getpwuid(os.getuid())[0]
+    cached_consensus_path = os.path.join(tor_directory, "cached-consensus")
+
+    fingerprints = get_fingerprints(cached_consensus_path)
+    all_hops = list(fingerprints)
+
+    sub_dict = {}
+
+    for sub in subs:
+        fingerprint = str(sub.subscriber.router.fingerprint)
+        if not ctl_util.is_exit(fingerprint):
+            continue
+
+        new_sub = sub
+        if sub.subscriber.confirmed:
+            sub_dict[fingerprint] = (sub.subscriber.email, 
+                                     sub.subscriber.router.name, 
+                                     sub.subscriber.unsubs_auth, 
+                                     sub.subscriber.pref_auth)
+            
+            try:
+                all_hops.remove(fingerprint)
+            except ValueError:
+                pass
+
+            first_hop = random.choice(all_hops)
+            logging.debug("Using random first hop %s for circuit." % first_hop)
+            hops = [first_hop, fingerprint]
+
+            assert len(hops) > 1
+            
+            try:
+                ctl_util.control.new_circuit(hops)
+            except stem.ControllerError as err:
+                recipient = sub.subscriber.email
+                name = sub.subscriber.router.name
+                unsubs_auth = sub.subscriber.unsubs_auth
+                pref_auth = sub.subscriber.pref_auth
+                email = emails.dns_tuple(recipient, fingerprint, name, unsubs_auth, pref_auth)
+                email_list.append(email)
+
+        time.sleep(3)
+
+    fingerprint_list = ctl_util.queue_reader()
+    for fpr in fingerprint_list:
+        recipient, name, unsubs_auth, pref_auth = sub_dict[fpr]
+        email = emails.dns_tuple(recipient, fingerprint, name, unsubs_auth, pref_auth)
+        email_list.append(email)
 
 
 def check_all_subs(ctl_util, email_list):
@@ -200,9 +276,25 @@ def run_all():
     email_list = []
     email_list = update_all_routers(ctl_util, email_list)
     email_list = check_all_subs(ctl_util, email_list)
-    mails = tuple(email_list)
 
     # TODO: send mass email
-    
+    current_app.config['MAIL_SERVER'] = 'smtp.gmail.com'
+    current_app.config['MAIL_PORT'] = 465
+    current_app.config['MAIL_USERNAME'] = ''
+    current_app.config['MAIL_PASSWORD'] = ''
+    current_app.config['MAIL_USE_TLS'] = False
+    current_app.config['MAIL_USE_SSL'] = True
 
+    mail = Mail(current_app)
+
+    with mail.connect() as conn:
+        for email in email_list:
+            subj, body, sender, recipients = email
+            msg = Message(subj, 
+                          body=body, 
+                          sender=sender, 
+                          recipients=recipients)
+
+            conn.send(msg)
+            
             
