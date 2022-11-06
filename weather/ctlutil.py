@@ -77,6 +77,10 @@ class CtlUtil:
 
         # for dns
         self.already_finished = False
+        self.finished_streams = 0
+        self.total_circuits = 0
+        self.failed_circuits = 0
+        self.successful_circuits = 0
 
     def setup_task(self):
 
@@ -185,6 +189,13 @@ class CtlUtil:
             logging.warning("Received unexpected event %s." % str(event))
 
     def new_circuit(self, circ_event):
+        if circ_event.status in [CircStatus.FAILED]:
+            self.failed_circuits += 1
+        elif circ_event.status in [CircStatus.BUILT]:
+            self.successful_circuits += 1
+        
+        self.check_finished()
+
         if circ_event.status not in [CircStatus.BUILT]:
             return
 
@@ -280,7 +291,8 @@ class CtlUtil:
                     self.control.close_circuit(circ_id)
                 except stem.InvalidArguments as err:
                     logging.debug("Could not close circuit because: %s" % err)
-
+                
+                self.finished_streams += 1
                 self.check_finished()
             else:
                 logging.debug("Read from queue: %s, %s" % (circ_id, str(sockname)))
@@ -298,22 +310,21 @@ class CtlUtil:
             if self.already_finished:
                 return
 
-            # TODO: Fill in self.stats
             # Did all circuits either build or fail?
-            circs_done = ((self.stats.failed_circuits +
-                           self.stats.successful_circuits) ==
-                          self.stats.total_circuits)
+            circs_done = ((self.failed_circuits +
+                           self.successful_circuits) ==
+                          self.total_circuits)
 
             # Was every built circuit attached to a stream?
-            streams_done = (self.stats.finished_streams >=
-                            (self.stats.successful_circuits -
-                             self.stats.failed_circuits))
+            streams_done = (self.finished_streams >=
+                            (self.successful_circuits -
+                             self.failed_circuits))
 
             logging.debug("failedCircs=%d, builtCircs=%d, totalCircs=%d, "
-                      "finishedStreams=%d" % (self.stats.failed_circuits,
-                                              self.stats.successful_circuits,
-                                              self.stats.total_circuits,
-                                              self.stats.finished_streams))
+                      "finishedStreams=%d" % (self.failed_circuits,
+                                              self.successful_circuits,
+                                              self.total_circuits,
+                                              self.finished_streams))
 
             if circs_done and streams_done:
                 self.already_finished = True
@@ -322,6 +333,5 @@ class CtlUtil:
                     logging.debug("Terminating remaining PID %d." % proc.pid)
                     proc.terminate()
 
-                logging.info(self.stats)
                 return
 
