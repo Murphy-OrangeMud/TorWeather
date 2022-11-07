@@ -22,6 +22,7 @@ from flask_mail import Mail, Message
 
 session = Session()
 
+
 def get_fingerprints(cached_consensus_path, exclude=[]):
     fingerprints = []
 
@@ -58,22 +59,24 @@ def check_node_down(ctl_util, email_list):
                     unsubs_auth = sub.router.subscriber.unsubs_auth
                     pref_auth = sub.router.subscriber.pref_auth
 
-                    email = emails.node_down_tuple(recipient, fingerprint, 
-                                                    name, grace_pd,          
+                    email = emails.node_down_tuple(recipient, fingerprint,
+                                                    name, grace_pd,
                                                     unsubs_auth, pref_auth)
 
                     email_list.append(email)
                     new_sub.emailed = True
-            
+
             session.delete(sub)
             session.add(new_sub)
             session.commit()
-        
+
     return email_list
 
 
 def check_low_bandwith(ctl_util, email_list):
     subs = session.query(BandwithSub).all()
+
+    ctl_util.get_bandwidths()
 
     for sub in subs:
         fingerprint = str(sub.router.fingerprint)
@@ -81,6 +84,8 @@ def check_low_bandwith(ctl_util, email_list):
 
         if sub.router.subscriber.confirmed:
             bandwidth = ctl_util.get_bandwidth(fingerprint)
+            if bandwidth < 0:
+                continue
             if bandwidth < sub.threshold:
                 if sub.emailed == False:
                     recipient = sub.router.subscriber.email
@@ -88,7 +93,7 @@ def check_low_bandwith(ctl_util, email_list):
                     name = sub.router.name
                     unsubs_auth = sub.router.subscriber.unsubs_auth
                     pref_auth = sub.router.subscriber.pref_auth
-                    email = emails.bandwidth_tuple(recipient, 
+                    email = emails.bandwidth_tuple(recipient,
                                                     fingerprint, name, bandwidth, threshold, unsubs_auth,
                                                     pref_auth)
 
@@ -96,11 +101,11 @@ def check_low_bandwith(ctl_util, email_list):
                     new_sub.emailed = True
             else:
                 new_sub.emailed = False
-            
+
             session.delete(sub)
             session.add(new_sub)
             session.commit()
-    
+
     return email_list
 
 
@@ -110,7 +115,7 @@ def check_version(ctl_util, email_list):
     for sub in subs:
         if sub.router.subscriber.confirmed:
             fingerprint = str(sub.router.fingerprint)
-            version_type = 'OBSOLETE' #TODO: verify and add "get_version_type"
+            version_type = 'OBSOLETE'  # TODO: verify and add "get_version_type"
             new_sub = sub
 
             if version_type != 'ERROR':
@@ -121,7 +126,7 @@ def check_version(ctl_util, email_list):
                         recipient = sub.router.subscriber.email
                         unsubs_auth = sub.router.subscriber.unsubs_auth
                         pref_auth = sub.router.subscriber.pref_auth
-                        email = emails.version_tuple(recipient, 
+                        email = emails.version_tuple(recipient,
                                                     fingerprint,
                                                     name,
                                                     version_type,
@@ -134,9 +139,9 @@ def check_version(ctl_util, email_list):
                 else:
                     new_sub.emailed = False
             else:
-                logging.info("Couldn't parse the version relay %s is running" \
+                logging.info("Couldn't parse the version relay %s is running"
                               % str(sub.subscriber.router.fingerprint))
-            
+
             session.delete(sub)
             session.add(new_sub)
             session.commit()
@@ -149,16 +154,13 @@ def check_dns_failure(ctl_util, email_list):
 
     ctl_util.setup_task()
 
-    tor_directory = "/tmp/tor-weather_datadir-" + pwd.getpwuid(os.getuid())[0]
-    cached_consensus_path = os.path.join(tor_directory, "cached-consensus")
-
-    fingerprints = ctl_util.get_finger_name_list(cached_consensus_path)
+    fingerprints = ctl_util.get_finger_name_list()
     all_hops = list(fingerprints)
 
     for sub in subs:
-        fingerprint = str(sub.router.fingerprint)
-        if not ctl_util.is_exit(fingerprint):
+        if not sub.router.exit:
             continue
+        fingerprint = str(sub.router.fingerprint)
 
         new_sub = sub
         if sub.router.subscriber.confirmed:
@@ -172,7 +174,7 @@ def check_dns_failure(ctl_util, email_list):
             hops = [first_hop, fingerprint]
 
             assert len(hops) > 1
-            
+
             try:
                 ctl_util.control.new_circuit(hops)
             except stem.ControllerError as err:
@@ -180,7 +182,8 @@ def check_dns_failure(ctl_util, email_list):
                 name = sub.router.name
                 unsubs_auth = sub.router.subscriber.unsubs_auth
                 pref_auth = sub.router.subscriber.pref_auth
-                email = emails.dns_tuple(recipient, fingerprint, name, unsubs_auth, pref_auth)
+                email = emails.dns_tuple(
+                    recipient, fingerprint, name, unsubs_auth, pref_auth)
                 email_list.append(email)
 
         time.sleep(3)
@@ -192,7 +195,8 @@ def check_dns_failure(ctl_util, email_list):
         name = router.name
         unsubs_auth = router.subscriber.unsubs_auth
         pref_auth = router.subscriber.pref_auth
-        email = emails.dns_tuple(recipient, fingerprint, name, unsubs_auth, pref_auth)
+        email = emails.dns_tuple(
+            recipient, fingerprint, name, unsubs_auth, pref_auth)
         email_list.append(email)
 
 
@@ -211,7 +215,7 @@ def update_all_routers(ctl_util, email_list):
         session.commit()
     else:
         deployed = deployed_query[0].deployed
-    
+
     if (datetime.now() - deployed).days < 2:
         fully_deployed = False
     else:
@@ -235,36 +239,34 @@ def update_all_routers(ctl_util, email_list):
         finger = router[0]
         name = router[1]
 
-        if ctl_util.is_up_or_hibernaing(finger):
-            router_data = None
-
-            try:
-                router_data = session.query(Router).filter_all(fingerprint=finger).first()
-                new_router_data = router_data
-                session.delete(router_data)
-            except:
-                if fully_deployed:
-                    router_data = Router(name=name, fingerprint=finger, welcomed=False)
-                else:
-                    router_data = Router(name=name, fingerprint=finger, welcomed=True)
-
+        router_data = None
+        try:
+            router_data = session.query(Router).filter_all(fingerprint=finger).first()
             new_router_data = router_data
-            new_router_data.last_seen = datetime.now()
-            new_router_data.name = name
-            new_router_data.up = True
-            new_router_data.exit = ctl_util.is_exit(finger)
+            session.delete(router_data)
+        except:
+            if fully_deployed:
+                router_data = Router(name=name, fingerprint=finger, welcomed=False)
+            else:
+                router_data = Router(name=name, fingerprint=finger, welcomed=True)
 
-            if router_data.welcomed == False and ctl_util.is_stable(finger):
-                recipient = ctl_util.get_email(finger)
-                is_exit = ctl_util.is_exit(finger)
-                if not recipient == "":
-                    email = emails.welcome_tuple(recipient, finger, name, is_exit)
-                    email_list.append(email)
+        new_router_data = router_data
+        new_router_data.last_seen = datetime.now()
+        new_router_data.name = name
+        new_router_data.up = True
+        new_router_data.exit = ctl_util.is_exit(finger)
 
-                new_router_data.welcomed = True
+        if router_data.welcomed == False and ctl_util.is_stable(finger):
+            recipient = ctl_util.get_email(finger)
+            is_exit = ctl_util.is_exit(finger)
+            if not recipient == "":
+                email = emails.welcome_tuple(recipient, finger, name, is_exit)
+                email_list.append(email)
 
-            session.add(new_router_data)
-            session.commit()
+            new_router_data.welcomed = True
+
+        session.add(new_router_data)
+        session.commit()
 
     return email_list
 

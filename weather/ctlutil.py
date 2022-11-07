@@ -1,5 +1,7 @@
+from ast import Pass
 import logging
 import multiprocessing
+from multiprocessing.sharedctypes import Value
 import re
 import string
 import functools
@@ -8,15 +10,19 @@ import threading
 import stem
 import stem.version
 import stem.response.events
+import stem.descriptor
+import stem.descriptor.remote
 
 from stem import Flag, StreamStatus, CircStatus
 from stem.control import Controller
 from config import config
 
+from datetime import datetime
 import dns.resolver
 import torsocks
 import socket
 import error
+from model import hours_since
 
 unparsable_email_file = 'log/unparsable_email.txt'
 
@@ -82,8 +88,12 @@ class CtlUtil:
         self.failed_circuits = 0
         self.successful_circuits = 0
 
-    def setup_task(self):
+        self.bandwidths = {}
+        self.consensus = None
+        self.last_updated_time = datetime.now()
+        self.update_finger_name_list()
 
+    def setup_task(self):
         self.manager = multiprocessing.Manager()
         self.queue = self.manager.Queue()
         self.check_finished_lock = threading.Lock()
@@ -95,61 +105,79 @@ class CtlUtil:
     def __del__(self):
         self.control.close()
 
-    def is_up(self, fingerprint):
-        try:
-            self.control.get_network_status(fingerprint)
-            return True
-        except:
-            return False
-
     def is_exit(self, fingerprint):
-        try:
-            desc = self.control.get_server_descriptor(fingerprint)
-            return desc.exit_policy.can_exit_to(port=80)
-        except stem.ControllerError as exc:
-            logging.error(
-                "Unable to get server descriptor for '%s': %s" % (fingerprint, exc))
-            return False
+        if hours_since(self.last_updated_time) > 2:
+            self.update_finger_name_list()
+        for fpr, relay in self.consensus.routers.items():
+            if fingerprint == fpr:
+                return relay.exit_policy.is_exiting_allowed()
+        
+        return False
 
     def get_finger_name_list(self):
+        if hours_since(self.last_updated_time) > 2:
+            self.update_finger_name_list()
+
         router_list = []
-
-        for desc in self.control.get_server_descriptors([]):
-            if desc.fingerprint:
-                router_list.append((desc.fingerprint, desc.nickname))
-
+        for fingerprint, relay in self.consensus.routers.items():
+            router_list.append((fingerprint, relay.nickname))
         return router_list
 
+    def update_finger_name_list(self):
+        downloader = stem.descriptor.remote.DescriptorDownloader()
+        consensus = downloader.get_consensus(document_handler=stem.descriptor.DocumentHandler.DOCUMENT).run()[0]
+        self.consensus = consensus
+        self.last_updated_time = datetime.now()
+        
     def is_stable(self, fingerprint):
-        try:
-            desc = self.control.get_network_status(fingerprint)
-            return Flag.Stable in desc.flags
-        except stem.ControllerError:
-            return False
+        if hours_since(self.last_updated_time) > 2:
+            self.update_finger_name_list()
 
-    def is_hibernating(self, fingerprint):
-        try:
-            desc = self.control.get_server_descriptor(fingerprint)
-            return desc.hibernating
-        except stem.ControllerError:
-            return False
-
-    def is_up_or_hibernating(self, fingerprint):
-        return (self.is_up(fingerprint) or self.is_hibernating(fingerprint))
+        for fpr, relay in self.consensus.routers.items():
+            if fpr == fingerprint:
+                if 'Stable' in relay.flags:
+                    return True
+        return False
 
     def get_bandwidth(self, fingerprint):
         try:
-            desc = self.control.get_server_descriptor(fingerprint)
-            return desc.observed_bandwidth / 1000
-        except stem.ControllerError:
-            return 0
+            return self.bandwidths[fingerprint]
+        except KeyError:
+            return -1
 
-    def get_version(self, fingerprint):
+    def get_bandwidths(self):
         try:
-            desc = self.control.get_server_descriptor(fingerprint)
-            return str(desc.tor_version)
-        except stem.ControllerError:
-            return ''
+            desc = stem.descriptor.remote.get_bandwidth_file().run()[0]
+            for fingerprint, measurement in desc.measurement.items():
+                bandwidth = int(measurement.get('bw', 0))
+                self.bandwidths[fingerprint] = bandwidth
+        except Exception as e:
+            logging.warning("Failed to get bandwidths!", e)
+
+    def get_version_type(self, fingerprint):
+        print("get_version_type")
+        version_list = self.control.get_info("status/version/recommended", "").split(',')
+        client_version = self.control.get_version(fingerprint)
+
+        if client_version == '':
+            return 'ERROR'
+
+        if not version_list:
+            return 'RECOMMENDED'
+
+        if client_version in version_list:
+            return 'RECOMMENDED'
+
+        if client_version.endswith("-dev"):
+            version_list.append(client_version)
+            if self.get_highest_version(version_list) == client_version:
+                return 'RECOMMENDED'
+
+            nondev_name = client_version.replace("-dev", "")
+            if nondev_name in version_list:
+                return 'RECOMMENDED'
+
+        return 'OBSOLETE'
 
     def resolve_exit(self):  # TODO: whether add fingerprint
         sock = torsocks.torsocket()
