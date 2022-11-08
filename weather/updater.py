@@ -20,17 +20,6 @@ from flask_mail import Mail, Message
 
 session = Session()
 
-
-def get_fingerprints(cached_consensus_path, exclude=[]):
-    fingerprints = []
-
-    for desc in stem.descriptor.parse_file(cached_consensus_path):
-        if desc.fingerprint not in exclude:
-            fingerprints.append(desc.fingerprint)
-
-    return fingerprints
-
-
 def check_node_down(ctl_util, email_list):
     print("Checking node down...")
     subs = session.query(NodeDownSub).all()
