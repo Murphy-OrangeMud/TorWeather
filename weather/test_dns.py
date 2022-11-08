@@ -215,7 +215,6 @@ def resolve_exit():
 
 def bootstrap():
     ports = {}
-    # partial_parse_log_lines = functools.partial(parse_log_lines, ports)
     try:
         proc = stem.process.launch_tor_with_config(
             config={
