@@ -213,34 +213,9 @@ def resolve_exit():
 
     return True
 
-def parse_log_lines(ports, log_line):
-    """
-    Extract the SOCKS and control port from Tor's log output.
-
-    Both ports are written to the given dictionary.
-    """
-
-    log.debug("Tor says: %s" % log_line)
-
-    if re.search(r"^.*Bootstrapped \d+%.*$", log_line):
-        log.info(re.sub(r"^.*(Bootstrapped \d+%.*)$", r"Tor \1", log_line))
-
-    socks_pattern = "Socks listener listening on port ([0-9]{1,5})."
-    control_pattern = "Control listener listening on port ([0-9]{1,5})."
-
-    match = re.search(socks_pattern, log_line)
-    if match:
-        ports["socks"] = int(match.group(1))
-        log.debug("Tor uses port %d as SOCKS port." % ports["socks"])
-
-    match = re.search(control_pattern, log_line)
-    if match:
-        ports["control"] = int(match.group(1))
-        log.debug("Tor uses port %d as control port." % ports["control"])
-
 def bootstrap():
     ports = {}
-    partial_parse_log_lines = functools.partial(parse_log_lines, ports)
+    # partial_parse_log_lines = functools.partial(parse_log_lines, ports)
     try:
         proc = stem.process.launch_tor_with_config(
             config={
@@ -259,7 +234,6 @@ def bootstrap():
             timeout=300,
             take_ownership=True,
             completion_percent=75,
-            init_msg_handler=partial_parse_log_lines,
         )
         log.info("Successfully started Tor process (PID=%d)." % proc.pid)
     except OSError as err:
