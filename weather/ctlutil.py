@@ -6,6 +6,7 @@ import re
 import string
 import functools
 import threading
+from typing import final
 
 import stem
 import stem.version
@@ -148,7 +149,7 @@ class CtlUtil:
     def get_bandwidths(self):
         try:
             desc = stem.descriptor.remote.get_bandwidth_file().run()[0]
-            for fingerprint, measurement in desc.measurement.items():
+            for fingerprint, measurement in desc.measurements.items():
                 bandwidth = int(measurement.get('bw', 0))
                 self.bandwidths[fingerprint] = bandwidth
         except Exception as e:
@@ -232,24 +233,18 @@ class CtlUtil:
         logging.debug("Circuit for exit relay \"%s\" is built.  "
                       "Now invoking probing module." % exit_fingerprint)
 
-        exit_desc = self.control.get_server_descriptor(exit_fingerprint)
-        if exit_desc is None:
-            self.control.close_circuit(circ_event.id)
-            return
-
         def dns_detector():
             flag = False
             try:
-                try:
-                    with torsocks.MonkeyPatchedSocket(self.queue, circ_event.id):
-                        flag = self.resolve_exit()
-                except (error.SOCKSv5Error, socket.error) as err:
-                    logging.info(err)
-                
-                logging.debug("Informing event handler that module finished.")
-                self.queue.put((circ_event.id, None, flag, exit_fingerprint)) # TODO: what to put: the result of resolve_exit
+                with torsocks.MonkeyPatchedSocket(self.queue, circ_event.id):
+                    flag = self.resolve_exit()
+            except (error.SOCKSv5Error, socket.error) as err:
+                logging.info(err)
             except KeyboardInterrupt:
                 pass
+            finally:
+                logging.debug("Informing event handler that module finished.")
+                self.queue.put((circ_event.id, None, flag, exit_fingerprint))
 
         proc = multiprocessing.Process(target=dns_detector)
         proc.daemon = True

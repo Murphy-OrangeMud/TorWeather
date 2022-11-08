@@ -7,6 +7,7 @@ from ctlutil import CtlUtil
 from model import BandwithSub, DeployedDatetime, Subscriber, Router, NodeDownSub, OutdatedVersionSub, DNSFailSub, Session, hours_since
 from config import config
 
+from stem.control import EventType
 import stem.descriptor
 import stem
 
@@ -34,6 +35,7 @@ def get_fingerprints(cached_consensus_path, exclude=[]):
 
 
 def check_node_down(ctl_util, email_list):
+    print("Checking node down...")
     subs = session.query(NodeDownSub).all()
 
     for sub in subs:
@@ -74,6 +76,7 @@ def check_node_down(ctl_util, email_list):
 
 
 def check_low_bandwith(ctl_util, email_list):
+    print("Checking low bandwidth...")
     subs = session.query(BandwithSub).all()
 
     ctl_util.get_bandwidths()
@@ -110,6 +113,7 @@ def check_low_bandwith(ctl_util, email_list):
 
 
 def check_version(ctl_util, email_list):
+    print("Checking version...")
     subs = session.query(OutdatedVersionSub).all()
 
     for sub in subs:
@@ -150,8 +154,11 @@ def check_version(ctl_util, email_list):
 
 
 def check_dns_failure(ctl_util, email_list):
+    print("Checking dns failure...")
     subs = session.query(DNSFailSub).all()
+    random.shuffle(subs)
 
+    ctl_util.control.add_event_listener(ctl_util.new_event, EventType.CIRC, EventType.STREAM)
     ctl_util.setup_task()
 
     fingerprints = ctl_util.get_finger_name_list()
@@ -162,7 +169,6 @@ def check_dns_failure(ctl_util, email_list):
             continue
         fingerprint = str(sub.router.fingerprint)
 
-        new_sub = sub
         if sub.router.subscriber.confirmed:
             try:
                 all_hops.remove(fingerprint)
@@ -244,6 +250,7 @@ def update_all_routers(ctl_util, email_list):
             router_data = session.query(Router).filter_all(fingerprint=finger).first()
             new_router_data = router_data
             session.delete(router_data)
+            session.commit()
         except:
             if fully_deployed:
                 router_data = Router(name=name, fingerprint=finger, welcomed=False)
@@ -264,6 +271,7 @@ def update_all_routers(ctl_util, email_list):
                 email_list.append(email)
 
             new_router_data.welcomed = True
+            new_router_data.exit = is_exit
 
         session.add(new_router_data)
         session.commit()

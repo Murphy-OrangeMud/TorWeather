@@ -70,12 +70,14 @@ class _Torsocket(socks.socksocket):
         host = hostname.encode('utf-8')
         # First connect to the local proxy
         self.negotiate()
+        print("Negotiate succeed")
         send_queue(socks._BaseSocket.getsockname(self))
         req = struct.pack('BBB', 0x05, 0xF0, 0x00)
         req += chr(0x03).encode() + chr(len(host)).encode() + host
         req = req + struct.pack(">H", 8444)
         socks._BaseSocket.sendall(self, req)
         # Get the response
+        print("Get response")
         ip = ""
         resp = socks._BaseSocket.recv(self, 4)
         if resp[0:1] != chr(0x05).encode():
@@ -83,6 +85,7 @@ class _Torsocket(socks.socksocket):
             raise error.SOCKSv5Error("SOCKS Server error")
         elif resp[1:2] != chr(0x00).encode():
             # Connection failed
+            print("Connection failed")
             socks._BaseSocket.close(self)
             if ord(resp[1:2])<=8:
                 raise error.SOCKSv5Error("SOCKS Server error {}".format(ord(resp[1:2])))
