@@ -1,16 +1,13 @@
 import base64
 from datetime import datetime
-import email
 import re
 
-from flask import current_app
 from sqlalchemy import create_engine
-from sqlalchemy.orm import scoped_session, sessionmaker
+from sqlalchemy.orm import sessionmaker
 from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy import Column, Integer, String, DateTime, Boolean, ForeignKey, MetaData
+from sqlalchemy import Column, Integer, String, DateTime, Boolean, ForeignKey
 from sqlalchemy.orm import relation
 
-from enum import Enum
 import base64
 import os
 from config import config
@@ -164,3 +161,4 @@ class DeployedDatetime(Base):
 
 def init_db():
     Base.metadata.create_all(engine)
+

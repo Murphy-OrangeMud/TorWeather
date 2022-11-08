@@ -1,9 +1,7 @@
 from flask import Flask
 from flask import request
 from flask import jsonify
-from http.client import HTTPException, HTTPResponse
-from model import BandwithSub, DNSFailSub, NodeDownSub, OutdatedVersionSub, Subscriber, Router, Session, Base, init_db
-from config import url_helper
+from model import BandwithSub, DNSFailSub, NodeDownSub, OutdatedVersionSub, Subscriber, Router, Session, init_db
 from config import config
 
 app = Flask(__name__)

@@ -1,10 +1,8 @@
 import os
 import struct
 import socket
-import select
 import errno
 import logging
-import _socket
 import socks
 import error
 
@@ -15,9 +13,6 @@ circ_id = None
 
 _orig_getaddrinfo = socket.getaddrinfo
 orig_socket = socket.socket
-
-_ERRNO_RETRY = frozenset((errno.EAGAIN, errno.EWOULDBLOCK,
-                          errno.EINPROGRESS, errno.EINTR))
 
 _LOCAL_SOCKETS = frozenset(
     getattr(socket, af) for af in [
@@ -106,9 +101,6 @@ class _Torsocket(socks.socksocket):
 
 def torsocket(family=socket.AF_INET, type=socket.SOCK_STREAM,
               proto=0, _sock=None):
-    """
-    Factory function usable as a monkey-patch for socket.socket.
-    """
 
     # Pass through local sockets.
     if family in _LOCAL_SOCKETS:
@@ -135,11 +127,7 @@ def getaddrinfo(*args):
 
 
 class MonkeyPatchedSocket(object):
-    """
-    Context manager which monkey-patches socket.socket with
-    the above torsocket().  It also sets up this module's
-    global state.
-    """
+
     def __init__(self, queue, circ_id, socks_port=9051, socks_addr="127.0.0.1"):
         self._queue           = queue
         self._circ_id         = circ_id
