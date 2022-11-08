@@ -36,35 +36,34 @@ def check_node_down(ctl_util, email_list):
     subs = session.query(NodeDownSub).all()
 
     for sub in subs:
-        if sub.router.subscriber.confirmed:
-            print(sub.router, sub.router.subscriber.email)
-            new_sub = sub
-            if sub.router.up:
-                if sub.triggered:
-                    new_sub.triggered = False
-                    new_sub.emailed = False
-                    new_sub.last_changed = datetime.now()
+        print(sub.router, sub.router.subscriber.email)
+        new_sub = sub
+        if sub.router.up:
+            if sub.triggered:
+                new_sub.triggered = False
+                new_sub.emailed = False
+                new_sub.last_changed = datetime.now()
 
-            else:
-                if not sub.triggered:
-                    new_sub.triggered = True
-                    new_sub.last_changed = datetime.now()
+        else:
+            if not sub.triggered:
+                new_sub.triggered = True
+                new_sub.last_changed = datetime.now()
 
-                if sub.triggered and (hours_since(sub.last_changed) >= sub.grace_pd) and sub.emailed == False:
-                    recipient = sub.router.subscriber.email
-                    fingerprint = sub.router.fingerprint
-                    name = sub.router.name
-                    grace_pd = sub.grace_pd
+            if sub.triggered and (hours_since(sub.last_changed) >= sub.grace_pd) and sub.emailed == False:
+                recipient = sub.router.subscriber.email
+                fingerprint = sub.router.fingerprint
+                name = sub.router.name
+                grace_pd = sub.grace_pd
 
-                    email = emails.node_down_tuple(recipient, fingerprint,
-                                                    name, grace_pd)
+                email = emails.node_down_tuple(recipient, fingerprint,
+                                                name, grace_pd)
 
-                    email_list.append(email)
-                    new_sub.emailed = True
+                email_list.append(email)
+                new_sub.emailed = True
 
-            session.delete(sub)
-            session.add(new_sub)
-            session.commit()
+        session.delete(sub)
+        session.add(new_sub)
+        session.commit()
 
     return email_list
 
@@ -79,26 +78,25 @@ def check_low_bandwith(ctl_util, email_list):
         fingerprint = str(sub.router.fingerprint)
         new_sub = sub
 
-        if sub.router.subscriber.confirmed:
-            bandwidth = ctl_util.get_bandwidth(fingerprint)
-            if bandwidth < 0:
-                continue
-            if bandwidth < sub.threshold:
-                if sub.emailed == False:
-                    recipient = sub.router.subscriber.email
-                    fingerprint = sub.router.fingerprint
-                    name = sub.router.name
-                    email = emails.bandwidth_tuple(recipient,
+        bandwidth = ctl_util.get_bandwidth(fingerprint)
+        if bandwidth < 0:
+            continue
+        if bandwidth < sub.threshold:
+            if sub.emailed == False:
+                recipient = sub.router.subscriber.email
+                fingerprint = sub.router.fingerprint
+                name = sub.router.name
+                email = emails.bandwidth_tuple(recipient,
                                                     fingerprint, name, bandwidth, sub.threshold)
 
-                    email_list.append(email)
-                    new_sub.emailed = True
-            else:
-                new_sub.emailed = False
+                email_list.append(email)
+                new_sub.emailed = True
+        else:
+            new_sub.emailed = False
 
-            session.delete(sub)
-            session.add(new_sub)
-            session.commit()
+        session.delete(sub)
+        session.add(new_sub)
+        session.commit()
 
     return email_list
 
@@ -108,34 +106,33 @@ def check_version(ctl_util, email_list):
     subs = session.query(OutdatedVersionSub).all()
 
     for sub in subs:
-        if sub.router.subscriber.confirmed:
-            fingerprint = str(sub.router.fingerprint)
-            version_type = 'OBSOLETE'  # TODO: verify and add "get_version_type"
-            new_sub = sub
+        fingerprint = str(sub.router.fingerprint)
+        version_type = 'OBSOLETE'  # TODO: verify and add "get_version_type"
+        new_sub = sub
 
-            if version_type != 'ERROR':
-                if version_type == 'OBSOLETE':
-                    if sub.emailed == False:
-                        fingerprint = sub.router.fingerprint
-                        name = sub.router.name
-                        recipient = sub.router.subscriber.email
-                        email = emails.version_tuple(recipient,
-                                                    fingerprint,
-                                                    name,
-                                                    version_type)
+        if version_type != 'ERROR':
+            if version_type == 'OBSOLETE':
+                if sub.emailed == False:
+                    fingerprint = sub.router.fingerprint
+                    name = sub.router.name
+                    recipient = sub.router.subscriber.email
+                    email = emails.version_tuple(recipient,
+                                                fingerprint,
+                                                name,
+                                                version_type)
 
-                        email_list.append(email)
-                        new_sub.emailed = True
+                    email_list.append(email)
+                    new_sub.emailed = True
 
-                else:
-                    new_sub.emailed = False
             else:
-                logging.info("Couldn't parse the version relay %s is running"
-                              % str(sub.subscriber.router.fingerprint))
+                new_sub.emailed = False
+        else:
+            logging.info("Couldn't parse the version relay %s is running"
+                            % str(sub.subscriber.router.fingerprint))
 
-            session.delete(sub)
-            session.add(new_sub)
-            session.commit()
+        session.delete(sub)
+        session.add(new_sub)
+        session.commit()
 
     return email_list
 
@@ -156,26 +153,25 @@ def check_dns_failure(ctl_util, email_list):
             continue
         fingerprint = str(sub.router.fingerprint)
 
-        if sub.router.subscriber.confirmed:
-            try:
-                all_hops.remove(fingerprint)
-            except ValueError:
-                pass
+        try:
+            all_hops.remove(fingerprint)
+        except ValueError:
+            pass
 
-            first_hop = random.choice(all_hops)
-            logging.debug("Using random first hop %s for circuit." % first_hop)
-            hops = [first_hop, fingerprint]
+        first_hop = random.choice(all_hops)
+        logging.debug("Using random first hop %s for circuit." % first_hop)
+        hops = [first_hop, fingerprint]
 
-            assert len(hops) > 1
+        assert len(hops) > 1
 
-            try:
-                ctl_util.control.new_circuit(hops)
-            except stem.ControllerError as err:
-                recipient = sub.router.subscriber.email
-                name = sub.router.name
-                email = emails.dns_tuple(
-                    recipient, fingerprint, name)
-                email_list.append(email)
+        try:
+            ctl_util.control.new_circuit(hops)
+        except stem.ControllerError as err:
+            recipient = sub.router.subscriber.email
+            name = sub.router.name
+            email = emails.dns_tuple(
+                recipient, fingerprint, name)
+            email_list.append(email)
 
         time.sleep(3)
 
@@ -246,18 +242,26 @@ def update_all_routers(ctl_util, email_list):
         new_router_data.up = True
         new_router_data.exit = ctl_util.is_exit(finger)
 
-        if router_data.welcomed == False and ctl_util.is_stable(finger):
-            recipient = ctl_util.get_email(finger)
-            is_exit = ctl_util.is_exit(finger)
-            if not recipient == "":
-                email = emails.welcome_tuple(recipient, finger, name, is_exit)
-                email_list.append(email)
+        if router_data.welcomed == False:
+            if finger in ctl_util.get_finger_name_list():
+                recipient = ctl_util.get_email(finger)
+                is_exit = ctl_util.is_exit(finger)
+                if not recipient == "":
+                    email = emails.welcome_tuple(recipient, finger, name, is_exit)
+                    email_list.append(email)
 
-            new_router_data.welcomed = True
-            new_router_data.exit = is_exit
-
-        session.add(new_router_data)
-        session.commit()
+                new_router_data.welcomed = True
+                new_router_data.exit = is_exit
+                session.add(new_router_data)
+                session.commit()
+            else:
+                recipient = ctl_util.get_email(finger)
+                if not recipient == "":
+                    email = emails.not_found_tuple(recipient, finger, name)
+                    email_list.append(email)
+        else:
+            session.add(new_router_data)
+            session.commit()
 
     return email_list
 

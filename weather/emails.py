@@ -1,9 +1,10 @@
 from model import insert_fingerprint_spaces
 from config import url_helper
+from config import config
 
 
 _SUBJECT_HEADER = '[Tor Weather]'
-_SENDER = 'tor-ops@torproject.org'
+_SENDER = config.email_username
 
 _LOW_BANDWIDTH_SUBJ = 'Low bandwidth!'
 _LOW_BANDWIDTH_MAIL = "This is a Tor Weather Report.\n\n"+\
@@ -29,6 +30,29 @@ _DNS_FAIL_MAIL = "This is a Tor Weather Report.\n\n"+\
     "It appears that the node %s you've been observing " +\
     "has been failing to resolve hostnames and has DNS poisoned." +\
     "You may wish to look at it and fix."
+
+_FINGERPRINT_NOT_FOUND_SUBJ = 'Fingerprint not found in stable relay list'
+_FINGERPRINT_NOT_FOUND_MAIL = 'Hello, your fingerprint is not found in the stable relay list. '+\
+    "Maybe you should run your relay a longer time to be recorded into the Tor fingerprint list. Welcome back again."
+
+_WELCOME_SUBJ = 'Welcome to Tor!'
+_WELCOME_MAIL = "Hello and welcome to Tor!\n\n" +\
+    "This is a Tor Weather welcome email."+\
+    "We've noticed that your Tor node %s has been running long "+\
+    "enough to be "+\
+    "flagged as \"stable\". First, we would like to thank you for your "+\
+    "contribution to the Tor network! As Tor grows, we require ever more "+\
+    "nodes to improve browsing speed and reliability for our users. "+\
+    "Your node is helping to serve the millions of Tor clients out there."+\
+    "%sThank you again for your contribution to the Tor network! "+\
+    "We won't send you any further emails unless you subscribe.\n\n"
+
+_LEGAL_INFO = "Additionally, since you are running as an exit node, you " +\
+    "might be interested in Tor's Legal FAQ for Relay Operators "+\
+    "(https://www.torproject.org/eff/tor-legal-faq.html.en) " +\
+    "and Mike Perry's blog post on running an exit node " +\
+    "(https://blog.torproject.org/blog/tips-running-exit-node-minimal-"+\
+    "harassment).\n\n"
 
 _GENERIC_FOOTER = "\n\nYou can unsubscribe from these reports at any time "+\
     "by posting request (Format: \{\"email\":\"YOUR_EMAIL\", \"fingerprint\":\"NODE_FINGERPRINT\"\}) to the following url:\n\n%s\n\nor change your Tor Weather "+\
@@ -90,5 +114,27 @@ def dns_tuple(recipient, fingerprint, name):
     sender = _SENDER
     msg = _DNS_FAIL_MAIL % router
     msg = _add_generic_footer(msg)
+    return (subj, msg, sender, [recipient])
+
+
+def not_found_tuple(recipient, fingerprint, name):
+    router = _get_router_name(fingerprint, name)
+    subj = _SUBJECT_HEADER + _FINGERPRINT_NOT_FOUND_SUBJ
+    sender = _SENDER
+    msg =_FINGERPRINT_NOT_FOUND_MAIL % router
+    msg = _add_generic_footer(msg)
+    return (subj, msg, sender, [recipient])
+
+
+def welcome_tuple(recipient, fingerprint, name, exit):
+    router = _get_router_name(fingerprint, name)
+    subj = _SUBJECT_HEADER + _WELCOME_SUBJ
+    sender = _SENDER
+    append = ''
+    # if the router is an exit node, append legal info 
+    if exit:
+        append = _LEGAL_INFO
+    url = url_helper.get_home_url()
+    msg = _WELCOME_MAIL % (router, url, append)
     return (subj, msg, sender, [recipient])
 
