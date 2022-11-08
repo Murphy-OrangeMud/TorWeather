@@ -6,7 +6,6 @@ import re
 import string
 import functools
 import threading
-from typing import final
 
 import stem
 import stem.version
@@ -153,7 +152,7 @@ class CtlUtil:
 
         router_list = []
         for fingerprint, relay in self.consensus.routers.items():
-            router_list.append((fingerprint, relay.nickname))
+            router_list.append(fingerprint)
         return router_list
 
     def update_finger_name_list(self):
