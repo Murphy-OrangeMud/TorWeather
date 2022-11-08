@@ -27,7 +27,7 @@ from model import hours_since
 
 unparsable_email_file = 'log/unparsable_email.txt'
 
-def get_source_port(self, stream_line):
+def get_source_port(stream_line):
     pattern = "SOURCE_ADDR=[0-9\.]{7,15}:([0-9]{1,5})"
     match = re.search(pattern, stream_line)
 
