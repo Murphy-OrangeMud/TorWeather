@@ -12,9 +12,6 @@ import stem.descriptor
 import stem
 
 import emails
-
-import os
-import pwd
 import random
 import time
 
@@ -58,12 +55,9 @@ def check_node_down(ctl_util, email_list):
                     fingerprint = sub.router.fingerprint
                     name = sub.router.name
                     grace_pd = sub.grace_pd
-                    unsubs_auth = sub.router.subscriber.unsubs_auth
-                    pref_auth = sub.router.subscriber.pref_auth
 
                     email = emails.node_down_tuple(recipient, fingerprint,
-                                                    name, grace_pd,
-                                                    unsubs_auth, pref_auth)
+                                                    name, grace_pd)
 
                     email_list.append(email)
                     new_sub.emailed = True
@@ -94,11 +88,8 @@ def check_low_bandwith(ctl_util, email_list):
                     recipient = sub.router.subscriber.email
                     fingerprint = sub.router.fingerprint
                     name = sub.router.name
-                    unsubs_auth = sub.router.subscriber.unsubs_auth
-                    pref_auth = sub.router.subscriber.pref_auth
                     email = emails.bandwidth_tuple(recipient,
-                                                    fingerprint, name, bandwidth, threshold, unsubs_auth,
-                                                    pref_auth)
+                                                    fingerprint, name, bandwidth, sub.threshold)
 
                     email_list.append(email)
                     new_sub.emailed = True
@@ -128,14 +119,10 @@ def check_version(ctl_util, email_list):
                         fingerprint = sub.router.fingerprint
                         name = sub.router.name
                         recipient = sub.router.subscriber.email
-                        unsubs_auth = sub.router.subscriber.unsubs_auth
-                        pref_auth = sub.router.subscriber.pref_auth
                         email = emails.version_tuple(recipient,
                                                     fingerprint,
                                                     name,
-                                                    version_type,
-                                                    unsubs_auth,
-                                                   pref_auth)
+                                                    version_type)
 
                         email_list.append(email)
                         new_sub.emailed = True
@@ -186,10 +173,8 @@ def check_dns_failure(ctl_util, email_list):
             except stem.ControllerError as err:
                 recipient = sub.router.subscriber.email
                 name = sub.router.name
-                unsubs_auth = sub.router.subscriber.unsubs_auth
-                pref_auth = sub.router.subscriber.pref_auth
                 email = emails.dns_tuple(
-                    recipient, fingerprint, name, unsubs_auth, pref_auth)
+                    recipient, fingerprint, name)
                 email_list.append(email)
 
         time.sleep(3)
@@ -199,10 +184,8 @@ def check_dns_failure(ctl_util, email_list):
         router = Router.query.filter_by(fingerprint=fpr).first()
         recipient = router.subscriber.email
         name = router.name
-        unsubs_auth = router.subscriber.unsubs_auth
-        pref_auth = router.subscriber.pref_auth
         email = emails.dns_tuple(
-            recipient, fingerprint, name, unsubs_auth, pref_auth)
+            recipient, fingerprint, name)
         email_list.append(email)
 
 

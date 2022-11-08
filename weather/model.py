@@ -83,31 +83,13 @@ class Subscriber(Base):
 
     email = Column(String, primary_key=True, unique=True)
     # router = Column(String, ForeignKey(Router.fingerprint), primary_key=True)
-    confirmed = Column(Boolean)
-    confirm_auth = Column(String)
-    unsubs_auth = Column(String)
-    pref_auth = Column(String)
     sub_date = Column(DateTime)
 
     routers = relation('Router', backref='subscriber', lazy='dynamic')
 
-    def __init__(self, email=None,
-                       confirmed=True,  # TODO: add confirming mechanism in flask app
-                       confirm_auth=None,
-                       unsubs_auth=None,
-                       pref_auth=None):
+    def __init__(self, email=None):
         super().__init__()
         self.email = email
-        self.confirmed = confirmed
-        if confirm_auth is None:
-            confirm_auth = get_rand_string()
-        self.confirm_auth = confirm_auth
-        if unsubs_auth is None:
-            unsubs_auth = get_rand_string()
-        self.unsubs_auth = unsubs_auth
-        if pref_auth is None:
-            pref_auth = get_rand_string()
-        self.pref_auth = pref_auth
         self.sub_date = datetime.now()
 
     def __repr__(self):

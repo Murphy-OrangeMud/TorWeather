@@ -54,9 +54,7 @@ def subscribe():
         routers = session.query(Router).filter_by(fingerprint=fingerprint).all()
         if len(routers) > 0:
             router = routers[0]
-            url_extension = url_helper.get_error_ext(
-                'already_subscribed', subscriber.pref_auth)
-            return jsonify({"status": "Error", "msg": url_extension}), 401
+            return jsonify({"status": "Error", "msg": 'already_subscribed'}), 401
 
         router = Router(fingerprint=fingerprint, subscriber=email)
         session.add(router)
