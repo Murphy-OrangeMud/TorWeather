@@ -48,10 +48,13 @@ class CtlUtil:
                  sock=None,
                  authenticator=_AUTHENTICATOR):
         self.control_host = control_host
+        self.sock_port = None
         self.control_port = control_port
         self.authenticator = authenticator
 
         try:
+            _, self.sock_port = self.bootstrap()
+            assert self.sock_port is not None
             self.control = Controller.from_port(port=self.control_port)
         except stem.SocketError:
             logging.error(
@@ -93,6 +96,35 @@ class CtlUtil:
         self.consensus = None
         self.last_updated_time = datetime.now()
         self.update_finger_name_list()
+
+    def bootstrap(self):
+        ports = {}
+        # partial_parse_log_lines = functools.partial(parse_log_lines, ports)
+        try:
+            proc = stem.process.launch_tor_with_config(
+                config={
+                    "SOCKSPort": "auto",
+                    "ControlPort": str(self.control_port),
+                    "DataDirectory": "/tmp/exitmap_tor_datadir",
+                    "CookieAuthentication": "1",
+                    "LearnCircuitBuildTimeout": "0",
+                    "CircuitBuildTimeout": "40",
+                    "__DisablePredictedCircuits": "1",
+                    "__LeaveStreamsUnattached": "1",
+                    "FetchHidServDescriptors": "0",
+                    "UseMicroDescriptors": "0",
+                    "PathsNeededToBuildCircuits": "0.95",
+                },
+                timeout=300,
+                take_ownership=True,
+                completion_percent=75,
+            )
+            print("Successfully started Tor process (PID=%d)." % proc.pid)
+        except OSError as err:
+            print("Couldn't launch Tor: %s.  Maybe try again?" % err)
+            return None, None
+
+        return ports["socks"], ports["control"]
 
     def setup_task(self):
         self.manager = multiprocessing.Manager()
