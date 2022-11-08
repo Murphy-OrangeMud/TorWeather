@@ -13,6 +13,8 @@ import random
 import sys
 import stem.process
 import functools
+import multiprocessing
+import threading
 
 log = logging.getLogger(__name__)
 
@@ -28,6 +30,9 @@ unattached = {}
 
 controller = None
 consensus = None
+manager = None
+queue = None
+check_finished_lock = None
 
 def get_exits():
     router_list = []
@@ -63,10 +68,39 @@ def setup():
             log.debug("Domain %s maps to %s." % (domain, record.address))
             domains[domain].append(record.address)
 
+def setup_task():
+    global manager, queue, check_finished_lock
+    manager = multiprocessing.Manager()
+    queue = manager.Queue()
+    check_finished_lock = threading.Lock()
+
+    queue_thread = threading.Thread(target=queue_reader)
+    queue_thread.daemon = False
+    queue_thread.start()
+
+def queue_reader():
+        while True:
+            try:
+                circ_id, sockname, flag, exit_fingerprint = queue.get()
+            except EOFError:
+                logging.debug("IPC queue terminated.")
+                break
+
+            if sockname is None:
+                logging.debug("Closing finished circuit %s." % circ_id)
+                print("Queue Reader: ", flag)
+                try:
+                    controller.close_circuit(circ_id)
+                except stem.InvalidArguments as err:
+                    logging.debug("Could not close circuit because: %s" % err)
+                
+            else:
+                logging.debug("Read from queue: %s, %s" % (circ_id, str(sockname)))
+                port = int(sockname[1])
+                attach_stream_to_circuit_prepare(port, circuit_id=circ_id)        
 
 def print_bw(event):
     print("Send: %i, Receive: %i" % (event.written, event.read))
-
 
 def new_circuit(circ_event):
     print("Listener: new circuit")
@@ -87,7 +121,6 @@ def new_circuit(circ_event):
         pass
     finally:
         log.debug("Informing event handler that module finished.")
-
 
 def new_stream(stream_event):
     print("Listener: new stream")
@@ -138,7 +171,6 @@ def _attach(stream_id=None, circuit_id=None):
         controller.attach_stream(stream_id, circuit_id)
     except stem.OperationFailed as err:
         log.warning("Failed to attach stream because: %s" % err)
-
 
 def new_event(event):
     print("New event")
@@ -243,6 +275,7 @@ if __name__ == "__main__":
     controller.authenticate(password="password") 
     controller.add_event_listener(print_bw, EventType.BW)
     setup()
+    setup_task()
     controller.add_event_listener(new_event, EventType.CIRC, EventType.STREAM)
     update_finger_name_list()
     all_hops = get_finger_name_list()
@@ -252,7 +285,7 @@ if __name__ == "__main__":
             all_hops.remove(hop)
         except:
             pass
-    controller.new_circuit([random.choice(all_hops), random.choice(exit_hops)])
+    controller.new_circuit([all_hops[0], exit_hops[1]]) # For Debug
     # controller.new_circuit(["6B494FEAAE8010B68E05B77EBDDEADB2D9728E60", "7BA5141BCC216A6160E9D3B42111AB8599E99E48"])
     # resolve_exit("7BA5141BCC216A6160E9D3B42111AB8599E99E48")
-    time.sleep(3600)
+    time.sleep(300)
