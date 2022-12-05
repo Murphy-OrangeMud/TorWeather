@@ -143,6 +143,16 @@ def check_dns_failure(ctl_util, email_list):
     for sub in subs:
         if not sub.router.exit:
             continue
+        elif ctl_util.is_bad_exit(sub.router.fingerprint):
+            recipient = sub.router.subscriber.email
+            name = sub.router.name
+            email = emails.dns_tuple(
+                recipient, fingerprint, name)
+            email_list.append(email)
+            continue
+
+        ctl_util.total_circuits += 1
+
         fingerprint = str(sub.router.fingerprint)
 
         try:
@@ -159,6 +169,9 @@ def check_dns_failure(ctl_util, email_list):
         try:
             ctl_util.control.new_circuit(hops)
         except stem.ControllerError as err:
+            ctl_util.failed_circuits += 1
+            log.debug("Circuit with exit relay \"%s\" could not be "
+                      "created: %s" % (fingerprint, err))
             recipient = sub.router.subscriber.email
             name = sub.router.name
             email = emails.dns_tuple(
@@ -167,7 +180,7 @@ def check_dns_failure(ctl_util, email_list):
 
         time.sleep(3)
 
-    fingerprint_list = ctl_util.queue_reader()
+    fingerprint_list = ctl_util.finished() #TODO: new thread
     for fpr in fingerprint_list:
         router = Router.query.filter_by(fingerprint=fpr).first()
         recipient = router.subscriber.email

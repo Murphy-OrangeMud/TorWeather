@@ -91,6 +91,12 @@ class CtlUtil:
             raise Exception
 
         self.control.authenticate(self.authenticator)
+
+        log.debug("Redirecting Tor's logging to /dev/null.")
+        self.control.set_conf("Log", "err file /dev/null")
+
+        self.cached_concensus_path = "/tmp/exitmap_tor_datadir/cached_concensus"
+
         self.destinations = None
         self.domains = {
             "www.youporn.com": [],
@@ -113,6 +119,7 @@ class CtlUtil:
         self.manager = None
         self.queue = None
         self.check_finished_lock = None
+        self.queue_thread = None
 
         # for dns
         self.already_finished = False
@@ -124,7 +131,9 @@ class CtlUtil:
         self.bandwidths = {}
         self.consensus = None
         self.last_updated_time = datetime.now()
-        self.update_finger_name_list()
+
+        self.dns_email_list = []
+        # self.update_finger_name_list()
 
     def bootstrap(self):
         ports = {}
@@ -147,6 +156,7 @@ class CtlUtil:
                 timeout=300,
                 take_ownership=True,
                 completion_percent=75,
+                init_msg_handler=partial_parse_log_lines,
             )
             log.debug("Successfully started Tor process (PID=%d)." % proc.pid)
         except OSError as err:
@@ -160,14 +170,15 @@ class CtlUtil:
         self.queue = self.manager.Queue()
         self.check_finished_lock = threading.Lock()
 
-        queue_thread = threading.Thread(target=self.queue_reader)
-        queue_thread.daemon = False
-        queue_thread.start()
+        self.queue_thread = threading.Thread(target=self.queue_reader)
+        self.queue_thread.daemon = False
+        self.queue_thread.start()
 
     def __del__(self):
         self.control.close()
 
     def is_exit(self, fingerprint):
+        """
         if hours_since(self.last_updated_time) > 2:
             self.update_finger_name_list()
         for fpr, relay in self.consensus.routers.items():
@@ -175,14 +186,42 @@ class CtlUtil:
                 return relay.exit_policy.is_exiting_allowed()
         
         return False
+        """
+        # because we cached consensus locally 
+        # when bootstrap tor network it's unneceessary to fetch
+
+        for desc in stem.descriptor.parse_file(self.cached_concensus_path, validate=False):
+            if desc.fingerprint == fingerprint:
+                return desc.exit_policy.is_exiting_allowed()
+
+        return False 
+
+    def is_bad_exit(self, fingerprint):
+        for desc in stem.descriptor.parse_file(self.cached_concensus_path, validate=False):
+            if desc.fingerprint == fingerprint and desc.exit_policy.is_exiting_allowed():
+                if stem.Flag.BADEXIT in desc.flags:
+                    return True
+                else:
+                    return False
+
+        raise Exception("Not an exit") 
 
     def get_finger_name_list(self):
+        """
         if hours_since(self.last_updated_time) > 2:
             self.update_finger_name_list()
 
         router_list = []
         for fingerprint, relay in self.consensus.routers.items():
             router_list.append(fingerprint)
+        return router_list
+        """
+        # because we cached consensus locally 
+        # when bootstrap tor network it's unneceessary to fetch
+
+        router_list = []
+        for desc in stem.descriptor.parse_file(self.cached_concensus_path):
+            router_list.append(desc.fingerprint)
         return router_list
 
     def update_finger_name_list(self):
@@ -192,6 +231,7 @@ class CtlUtil:
         self.last_updated_time = datetime.now()
         
     def is_stable(self, fingerprint):
+        """
         if hours_since(self.last_updated_time) > 2:
             self.update_finger_name_list()
 
@@ -199,6 +239,16 @@ class CtlUtil:
             if fpr == fingerprint:
                 if 'Stable' in relay.flags:
                     return True
+        return False
+        """
+
+        for desc in stem.descriptor.parse_file(self.cached_concensus_path):
+            if fingerprint == desc.fingerprint:
+                if stem.Flag.STABLE in desc.flags:
+                    return True
+                else:
+                    return False
+        
         return False
 
     def get_bandwidth(self, fingerprint):
@@ -241,6 +291,17 @@ class CtlUtil:
 
         return 'OBSOLETE'
 
+    def get_relay_desc(self, fingerprint):
+        try:
+            self.update_finger_name_list()
+
+            for fpr, relay in self.consensus.routers.items():
+                if fpr == fingerprint:
+                    return relay
+        except:
+            log.warning("Failed to get updated relay descriptors")
+            return None 
+
     def resolve_exit(self):  # TODO: whether add fingerprint
         sock = torsocks.torsocket()
         sock.settimeout(10)
@@ -280,6 +341,7 @@ class CtlUtil:
 
     def new_circuit(self, circ_event):
         if circ_event.status in [CircStatus.FAILED]:
+            log.debug("Circuit failed because: %s" % str(circ_event.reason))
             self.failed_circuits += 1
         elif circ_event.status in [CircStatus.BUILT]:
             self.successful_circuits += 1
@@ -293,6 +355,12 @@ class CtlUtil:
         exit_fingerprint = last_hop[0]
         log.debug("Circuit for exit relay \"%s\" is built.  "
                       "Now invoking probing module." % exit_fingerprint)
+
+        desc = self.get_relay_desc(exit_fingerprint)
+        if desc is None:
+            self.control.close_circuit(circ_event.id)
+            self.queue.put((circ_event.id, None, False, exit_fingerprint))
+            return
 
         def dns_detector():
             flag = False
@@ -323,6 +391,7 @@ class CtlUtil:
         
         log.debug("Adding attacher for new stream %s." % stream_event.id)
         self.attach_stream_to_circuit_prepare(port, stream_id=stream_event.id)
+        self.check_finished()
 
     def attach_stream_to_circuit_prepare(self, port, circuit_id=None, stream_id=None):
         assert ((circuit_id is not None) and (stream_id is None)) or \
@@ -358,7 +427,7 @@ class CtlUtil:
         except stem.OperationFailed as err:
             log.warning("Failed to attach stream because: %s" % err)
 
-    def queue_reader(self):
+    def queue_reader(self): #TODO: how to get return value
         fingerprint_list = []
         while True:
             try:
@@ -387,7 +456,8 @@ class CtlUtil:
             if self.already_finished:
                 break
         
-        return fingerprint_list
+        self.dns_email_list = fingerprint_list
+        return 
 
     def check_finished(self):
         with self.check_finished_lock:
@@ -419,3 +489,6 @@ class CtlUtil:
 
                 return
 
+    def finished(self):
+        self.queue_thread.join()
+        return self.dns_email_list
