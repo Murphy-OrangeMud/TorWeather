@@ -27,6 +27,7 @@ from model import hours_since
 
 log = logging.getLogger(__name__)
 
+
 def parse_log_lines(ports, log_line):
     """
     Extract the SOCKS and control port from Tor's log output.
@@ -53,7 +54,39 @@ def parse_log_lines(ports, log_line):
         log.debug("Tor uses port %d as control port." % ports["control"])
 
 
+def bootstrap(control_port):
+        ports = {}
+        partial_parse_log_lines = functools.partial(parse_log_lines, ports)
+        try:
+            proc = stem.process.launch_tor_with_config(
+                config={
+                    "SOCKSPort": "auto",
+                    "ControlPort": str(control_port),
+                    "DataDirectory": "/tmp/exitmap_tor_datadir",
+                    "CookieAuthentication": "1",
+                    "LearnCircuitBuildTimeout": "0",
+                    "CircuitBuildTimeout": "40",
+                    "__DisablePredictedCircuits": "1",
+                    "__LeaveStreamsUnattached": "1",
+                    "FetchHidServDescriptors": "0",
+                    "UseMicroDescriptors": "0",
+                    "PathsNeededToBuildCircuits": "0.95",
+                },
+                timeout=300,
+                take_ownership=True,
+                completion_percent=75,
+                init_msg_handler=partial_parse_log_lines,
+            )
+            log.debug("Successfully started Tor process (PID=%d)." % proc.pid)
+        except OSError as err:
+            log.debug("Couldn't launch Tor: %s.  Maybe try again?" % err)
+            return None, None
+
+        return ports["socks"], ports["control"]
+
+
 unparsable_email_file = 'log/unparsable_email.txt'
+
 
 def get_source_port(stream_line):
     pattern = "SOURCE_ADDR=[0-9\.]{7,15}:([0-9]{1,5})"
@@ -79,9 +112,10 @@ class CtlUtil:
         self.sock_port = None
         self.control_port = control_port
         self.authenticator = authenticator
+        self.control = None
 
         try:
-            _, self.sock_port = self.bootstrap()
+            _, self.sock_port = bootstrap(self.control_port)
             log.debug("Bootstrapped!")
             assert self.sock_port is not None
             self.control = Controller.from_port(port=self.control_port)
@@ -111,7 +145,7 @@ class CtlUtil:
             response = dns.resolver.resolve(domain)
             for record in response:
                 log.debug("Domain %s maps to %s." %
-                              (domain, record.address))
+                          (domain, record.address))
                 self.domains[domain].append(record.address)
 
         self.unattached = {}
@@ -135,36 +169,6 @@ class CtlUtil:
         self.dns_email_list = []
         # self.update_finger_name_list()
 
-    def bootstrap(self):
-        ports = {}
-        partial_parse_log_lines = functools.partial(parse_log_lines, ports)
-        try:
-            proc = stem.process.launch_tor_with_config(
-                config={
-                    "SOCKSPort": "auto",
-                    "ControlPort": str(self.control_port),
-                    "DataDirectory": "/tmp/exitmap_tor_datadir",
-                    "CookieAuthentication": "1",
-                    "LearnCircuitBuildTimeout": "0",
-                    "CircuitBuildTimeout": "40",
-                    "__DisablePredictedCircuits": "1",
-                    "__LeaveStreamsUnattached": "1",
-                    "FetchHidServDescriptors": "0",
-                    "UseMicroDescriptors": "0",
-                    "PathsNeededToBuildCircuits": "0.95",
-                },
-                timeout=300,
-                take_ownership=True,
-                completion_percent=75,
-                init_msg_handler=partial_parse_log_lines,
-            )
-            log.debug("Successfully started Tor process (PID=%d)." % proc.pid)
-        except OSError as err:
-            log.debug("Couldn't launch Tor: %s.  Maybe try again?" % err)
-            return None, None
-
-        return ports["socks"], ports["control"]
-
     def setup_task(self):
         self.manager = multiprocessing.Manager()
         self.queue = self.manager.Queue()
@@ -175,7 +179,8 @@ class CtlUtil:
         self.queue_thread.start()
 
     def __del__(self):
-        self.control.close()
+        if self.control is not None:
+            self.control.close()
 
     def is_exit(self, fingerprint):
         """
@@ -184,17 +189,17 @@ class CtlUtil:
         for fpr, relay in self.consensus.routers.items():
             if fingerprint == fpr:
                 return relay.exit_policy.is_exiting_allowed()
-        
+
         return False
         """
-        # because we cached consensus locally 
+        # because we cached consensus locally
         # when bootstrap tor network it's unneceessary to fetch
 
         for desc in stem.descriptor.parse_file(self.cached_concensus_path, validate=False):
             if desc.fingerprint == fingerprint:
                 return desc.exit_policy.is_exiting_allowed()
 
-        return False 
+        return False
 
     def is_bad_exit(self, fingerprint):
         for desc in stem.descriptor.parse_file(self.cached_concensus_path, validate=False):
@@ -204,7 +209,7 @@ class CtlUtil:
                 else:
                     return False
 
-        raise Exception("Not an exit") 
+        raise Exception("Not an exit")
 
     def get_finger_name_list(self):
         """
@@ -216,7 +221,7 @@ class CtlUtil:
             router_list.append(fingerprint)
         return router_list
         """
-        # because we cached consensus locally 
+        # because we cached consensus locally
         # when bootstrap tor network it's unneceessary to fetch
 
         router_list = []
@@ -226,10 +231,11 @@ class CtlUtil:
 
     def update_finger_name_list(self):
         downloader = stem.descriptor.remote.DescriptorDownloader()
-        consensus = downloader.get_consensus(document_handler=stem.descriptor.DocumentHandler.DOCUMENT).run()[0]
+        consensus = downloader.get_consensus(
+            document_handler=stem.descriptor.DocumentHandler.DOCUMENT).run()[0]
         self.consensus = consensus
         self.last_updated_time = datetime.now()
-        
+
     def is_stable(self, fingerprint):
         """
         if hours_since(self.last_updated_time) > 2:
@@ -248,7 +254,7 @@ class CtlUtil:
                     return True
                 else:
                     return False
-        
+
         return False
 
     def get_bandwidth(self, fingerprint):
@@ -268,7 +274,8 @@ class CtlUtil:
 
     def get_version_type(self, fingerprint):
         log.debug("get_version_type")
-        version_list = self.control.get_info("status/version/recommended", "").split(',')
+        version_list = self.control.get_info(
+            "status/version/recommended", "").split(',')
         client_version = self.control.get_version(fingerprint)
 
         if client_version == '':
@@ -300,7 +307,7 @@ class CtlUtil:
                     return relay
         except:
             log.warning("Failed to get updated relay descriptors")
-            return None 
+            return None
 
     def resolve_exit(self):  # TODO: whether add fingerprint
         sock = torsocks.torsocket()
@@ -311,7 +318,7 @@ class CtlUtil:
                 ipv4 = sock.resolve(domain)
             except error.SOCKSv5Error as err:
                 log.debug("Exit relay %s could not resolve IPv4 address for "
-                              "\"%s\" because: %s" % (exit, domain, err))
+                          "\"%s\" because: %s" % (exit, domain, err))
                 return False
             except socket.timeout as err:
                 log.debug(
@@ -323,11 +330,11 @@ class CtlUtil:
 
             if ipv4 not in self.domains[domain]:
                 log.critical("Exit relay %s returned unexpected IPv4 address %s "
-                                 "for domain %s" % (exit, ipv4, domain))
+                             "for domain %s" % (exit, ipv4, domain))
                 return False
             else:
                 log.debug("IPv4 address of domain %s as expected for %s." %
-                              (domain, exit))
+                          (domain, exit))
 
         return True
 
@@ -345,7 +352,7 @@ class CtlUtil:
             self.failed_circuits += 1
         elif circ_event.status in [CircStatus.BUILT]:
             self.successful_circuits += 1
-        
+
         self.check_finished()
 
         if circ_event.status not in [CircStatus.BUILT]:
@@ -354,7 +361,7 @@ class CtlUtil:
         last_hop = circ_event.path[-1]
         exit_fingerprint = last_hop[0]
         log.debug("Circuit for exit relay \"%s\" is built.  "
-                      "Now invoking probing module." % exit_fingerprint)
+                  "Now invoking probing module." % exit_fingerprint)
 
         desc = self.get_relay_desc(exit_fingerprint)
         if desc is None:
@@ -388,7 +395,7 @@ class CtlUtil:
             log.warning("Couldn't extract source port from stream "
                         "event: %s" % str(stream_event))
             return
-        
+
         log.debug("Adding attacher for new stream %s." % stream_event.id)
         self.attach_stream_to_circuit_prepare(port, stream_id=stream_event.id)
         self.check_finished()
@@ -427,7 +434,7 @@ class CtlUtil:
         except stem.OperationFailed as err:
             log.warning("Failed to attach stream because: %s" % err)
 
-    def queue_reader(self): #TODO: how to get return value
+    def queue_reader(self):  # TODO: how to get return value
         fingerprint_list = []
         while True:
             try:
@@ -444,7 +451,7 @@ class CtlUtil:
                     self.control.close_circuit(circ_id)
                 except stem.InvalidArguments as err:
                     log.debug("Could not close circuit because: %s" % err)
-                
+
                 self.finished_streams += 1
                 self.check_finished()
             else:
@@ -455,9 +462,9 @@ class CtlUtil:
 
             if self.already_finished:
                 break
-        
+
         self.dns_email_list = fingerprint_list
-        return 
+        return
 
     def check_finished(self):
         with self.check_finished_lock:

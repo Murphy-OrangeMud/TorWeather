@@ -83,7 +83,7 @@ def subscribe():
             session.commit()
 
         if get_dns_fail:
-            dns_sub = DNSFailSub()
+            dns_sub = DNSFailSub(router=fingerprint)
             session.add(dns_sub)
             session.commit()
 
