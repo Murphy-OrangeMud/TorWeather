@@ -6,6 +6,8 @@ import logging
 import socks
 import error
 
+log = logging.getLogger(__name__)
+
 proxy_addr = None
 proxy_port = None
 queue = None
@@ -51,12 +53,12 @@ class _Torsocket(socks.socksocket):
                send_queue(args[0].getsockname())
                orig_neg(*args, **kwargs)
             except Exception as e:
-                logging.debug("Error in custom negotiation function: {}".format(e))
+                log.debug("Error in custom negotiation function: {}".format(e))
         self._proxy_negotiators[2] = ourneg
     
     def negotiate(self):
         proxy_type, addr, port, rdns, username, password = self.proxy
-        logging.warn((addr, port))
+        log.warn((addr, port))
         socks._BaseSocket.connect(self, (addr, port))
         socks._BaseSocket.sendall(self, struct.pack('BBB', 0x05, 0x01, 0x00))
         socks._BaseSocket.recv(self, 2)
@@ -65,14 +67,14 @@ class _Torsocket(socks.socksocket):
         host = hostname.encode('utf-8')
         # First connect to the local proxy
         self.negotiate()
-        print("Negotiate succeed")
+        log.debug("Negotiate succeed")
         send_queue(socks._BaseSocket.getsockname(self))
         req = struct.pack('BBB', 0x05, 0xF0, 0x00)
         req += chr(0x03).encode() + chr(len(host)).encode() + host
         req = req + struct.pack(">H", 8444)
         socks._BaseSocket.sendall(self, req)
         # Get the response
-        print("Get response")
+        log.debug("Get response")
         ip = ""
         resp = socks._BaseSocket.recv(self, 4)
         if resp[0:1] != chr(0x05).encode():
@@ -80,7 +82,7 @@ class _Torsocket(socks.socksocket):
             raise error.SOCKSv5Error("SOCKS Server error")
         elif resp[1:2] != chr(0x00).encode():
             # Connection failed
-            print("Connection failed")
+            log.debug("Connection failed")
             socks._BaseSocket.close(self)
             if ord(resp[1:2])<=8:
                 raise error.SOCKSv5Error("SOCKS Server error {}".format(ord(resp[1:2])))

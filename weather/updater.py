@@ -19,14 +19,16 @@ import requests
 from flask import current_app
 from flask_mail import Mail, Message
 
+log = logging.getLogger(__name__)
+
 session = Session()
 
 def check_node_down(ctl_util, email_list):
-    print("Checking node down...")
+    log.debug("Checking node down...")
     subs = session.query(NodeDownSub).all()
 
     for sub in subs:
-        print(sub.router, sub.router.subscriber.email)
+        log.debug(sub.router, sub.router.subscriber.email)
         new_sub = sub
         if sub.router.up:
             if sub.triggered:
@@ -59,7 +61,7 @@ def check_node_down(ctl_util, email_list):
 
 
 def check_low_bandwith(ctl_util, email_list):
-    print("Checking low bandwidth...")
+    log.debug("Checking low bandwidth...")
     subs = session.query(BandwithSub).all()
 
     ctl_util.get_bandwidths()
@@ -92,7 +94,7 @@ def check_low_bandwith(ctl_util, email_list):
 
 
 def check_version(ctl_util, email_list):
-    print("Checking version...")
+    log.debug("Checking version...")
     subs = session.query(OutdatedVersionSub).all()
 
     for sub in subs:
@@ -117,7 +119,7 @@ def check_version(ctl_util, email_list):
             else:
                 new_sub.emailed = False
         else:
-            logging.info("Couldn't parse the version relay %s is running"
+            log.info("Couldn't parse the version relay %s is running"
                             % str(sub.subscriber.router.fingerprint))
 
         session.delete(sub)
@@ -128,7 +130,7 @@ def check_version(ctl_util, email_list):
 
 
 def check_dns_failure(ctl_util, email_list):
-    print("Checking dns failure...")
+    log.debug("Checking dns failure...")
     subs = session.query(DNSFailSub).all()
     random.shuffle(subs)
 
@@ -149,7 +151,7 @@ def check_dns_failure(ctl_util, email_list):
             pass
 
         first_hop = random.choice(all_hops)
-        logging.debug("Using random first hop %s for circuit." % first_hop)
+        log.debug("Using random first hop %s for circuit." % first_hop)
         hops = [first_hop, fingerprint]
 
         assert len(hops) > 1
@@ -257,6 +259,11 @@ def update_all_routers(ctl_util, email_list):
 
 
 def run_all():
+    logging.getLogger("stem").setLevel(logging.__dict__["DEBUG"])
+    log_format = "%(asctime)s %(name)s [%(levelname)s] %(message)s"
+    logging.basicConfig(format=log_format,
+                        level=logging.__dict__["DEBUG"],
+                        filename=None)
     ctl_util = CtlUtil()
     email_list = []
     email_list = update_all_routers(ctl_util, email_list)

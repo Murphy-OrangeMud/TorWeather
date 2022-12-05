@@ -17,6 +17,7 @@ import multiprocessing
 import threading
 
 log = logging.getLogger(__name__)
+log.setLevel(logging.DEBUG)
 
 domains = {
     "www.youporn.com": [],
@@ -83,27 +84,27 @@ def queue_reader():
             try:
                 circ_id, sockname, flag, exit_fingerprint = queue.get()
             except EOFError:
-                logging.debug("IPC queue terminated.")
+                log.debug("IPC queue terminated.")
                 break
 
             if sockname is None:
-                logging.debug("Closing finished circuit %s." % circ_id)
-                print("Queue Reader: ", flag)
+                log.debug("Closing finished circuit %s." % circ_id)
+                log.info("Queue Reader: ", flag)
                 try:
                     controller.close_circuit(circ_id)
                 except stem.InvalidArguments as err:
-                    logging.debug("Could not close circuit because: %s" % err)
+                    log.debug("Could not close circuit because: %s" % err)
                 
             else:
-                logging.debug("Read from queue: %s, %s" % (circ_id, str(sockname)))
+                log.debug("Read from queue: %s, %s" % (circ_id, str(sockname)))
                 port = int(sockname[1])
                 attach_stream_to_circuit_prepare(port, circuit_id=circ_id)        
 
 def print_bw(event):
-    print("Send: %i, Receive: %i" % (event.written, event.read))
+    log.info("Send: %i, Receive: %i" % (event.written, event.read))
 
 def new_circuit(circ_event):
-    print("Listener: new circuit")
+    log.info("Listener: new circuit")
     if circ_event.status not in [CircStatus.BUILT]:
         return
 
@@ -114,7 +115,7 @@ def new_circuit(circ_event):
 
     try:
         with torsocks.MonkeyPatchedSocket(None, circ_event.id, socks_port):
-            print(resolve_exit())
+            log.info(resolve_exit())
     except (error.SOCKSv5Error, socket.error) as err:
         log.info(err)
     except KeyboardInterrupt:
@@ -123,7 +124,7 @@ def new_circuit(circ_event):
         log.debug("Informing event handler that module finished.")
 
 def new_stream(stream_event):
-    print("Listener: new stream")
+    log.info("Listener: new stream")
     if stream_event.status not in [StreamStatus.NEW, StreamStatus.NEWRESOLVE]:
             return
 
@@ -137,7 +138,7 @@ def new_stream(stream_event):
     attach_stream_to_circuit_prepare(port, stream_id=stream_event.id)
 
 def attach_stream_to_circuit_prepare(port, circuit_id=None, stream_id=None):
-    print("Attach stream to circuit prepare")
+    log.info("Attach stream to circuit prepare")
     assert ((circuit_id is not None) and (stream_id is None)) or \
                ((circuit_id is None) and (stream_id is not None))
 
@@ -163,7 +164,7 @@ def attach_stream_to_circuit_prepare(port, circuit_id=None, stream_id=None):
         log.debug("Pending attachers: %d." % len(unattached))
 
 def _attach(stream_id=None, circuit_id=None):
-    print("Attach")
+    log.info("Attach")
     log.debug("Attempting to attach stream %s to circuit %s." %
                   (stream_id, circuit_id))
 
@@ -173,7 +174,7 @@ def _attach(stream_id=None, circuit_id=None):
         log.warning("Failed to attach stream because: %s" % err)
 
 def new_event(event):
-    print("New event")
+    log.info("New event")
     if isinstance(event, stem.response.events.CircuitEvent):
         new_circuit(event)
     elif isinstance(event, stem.response.events.StreamEvent):
@@ -188,33 +189,60 @@ def resolve_exit():
     for domain in list(domains.keys()):
         try:
             ipv4 = sock.resolve(domain)
-            print("Yeah: ", ipv4)
+            log.info("Yeah: ", ipv4)
         except error.SOCKSv5Error as err:
-            print("Exit relay %s could not resolve IPv4 address for "
+            log.info("Exit relay %s could not resolve IPv4 address for "
                           "\"%s\" because: %s" % (exit, domain, err))
             return False
         except socket.timeout as err:
-            print(
+            log.info(
                 "Socket over exit relay %s timed out: %s" % (exit, err))
             return False
         except EOFError as err:
-            print("EOF error: %s" % err)
+            log.info("EOF error: %s" % err)
             return False
         
-        print(ipv4)
+        log.info(ipv4)
 
         if ipv4 not in domains[domain]:
-            print("Exit relay %s returned unexpected IPv4 address %s "
+            log.info("Exit relay %s returned unexpected IPv4 address %s "
                              "for domain %s" % (exit, ipv4, domain))
             return False
         else:
-            print("IPv4 address of domain %s as expected for %s." %
+            log.info("IPv4 address of domain %s as expected for %s." %
                           (domain, exit))
 
     return True
 
+def parse_log_lines(ports, log_line):
+    """
+    Extract the SOCKS and control port from Tor's log output.
+
+    Both ports are written to the given dictionary.
+    """
+
+    log.debug("Tor says: %s" % log_line)
+
+    if re.search(r"^.*Bootstrapped \d+%.*$", log_line):
+        log.info(re.sub(r"^.*(Bootstrapped \d+%.*)$", r"Tor \1", log_line))
+
+    socks_pattern = "Socks listener listening on port ([0-9]{1,5})."
+    control_pattern = "Control listener listening on port ([0-9]{1,5})."
+
+    match = re.search(socks_pattern, log_line)
+    if match:
+        ports["socks"] = int(match.group(1))
+        log.debug("Tor uses port %d as SOCKS port." % ports["socks"])
+
+    match = re.search(control_pattern, log_line)
+    if match:
+        ports["control"] = int(match.group(1))
+        log.debug("Tor uses port %d as control port." % ports["control"])
+
 def bootstrap():
     ports = {}
+    partial_parse_log_lines = functools.partial(parse_log_lines, ports)
+
     try:
         proc = stem.process.launch_tor_with_config(
             config={
@@ -233,6 +261,7 @@ def bootstrap():
             timeout=300,
             take_ownership=True,
             completion_percent=75,
+            init_msg_handler=partial_parse_log_lines
         )
         log.info("Successfully started Tor process (PID=%d)." % proc.pid)
     except OSError as err:
@@ -243,6 +272,11 @@ def bootstrap():
 
 
 if __name__ == "__main__":
+    logging.getLogger("stem").setLevel(logging.__dict__["DEBUG"])
+    log_format = "%(asctime)s %(name)s [%(levelname)s] %(message)s"
+    logging.basicConfig(format=log_format,
+                        level=logging.__dict__["DEBUG"],
+                        filename=None)
     socks_port, control_port = bootstrap()
     controller = Controller.from_port(port=control_port)
     controller.authenticate(password="password") 

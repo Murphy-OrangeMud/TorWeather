@@ -15,6 +15,7 @@ import stem.descriptor.remote
 
 from stem import Flag, StreamStatus, CircStatus
 from stem.control import Controller
+import stem.process
 from config import config
 
 from datetime import datetime
@@ -23,6 +24,34 @@ import torsocks
 import socket
 import error
 from model import hours_since
+
+log = logging.getLogger(__name__)
+
+def parse_log_lines(ports, log_line):
+    """
+    Extract the SOCKS and control port from Tor's log output.
+
+    Both ports are written to the given dictionary.
+    """
+
+    log.debug("Tor says: %s" % log_line)
+
+    if re.search(r"^.*Bootstrapped \d+%.*$", log_line):
+        log.info(re.sub(r"^.*(Bootstrapped \d+%.*)$", r"Tor \1", log_line))
+
+    socks_pattern = "Socks listener listening on port ([0-9]{1,5})."
+    control_pattern = "Control listener listening on port ([0-9]{1,5})."
+
+    match = re.search(socks_pattern, log_line)
+    if match:
+        ports["socks"] = int(match.group(1))
+        log.debug("Tor uses port %d as SOCKS port." % ports["socks"])
+
+    match = re.search(control_pattern, log_line)
+    if match:
+        ports["control"] = int(match.group(1))
+        log.debug("Tor uses port %d as control port." % ports["control"])
+
 
 unparsable_email_file = 'log/unparsable_email.txt'
 
@@ -53,10 +82,11 @@ class CtlUtil:
 
         try:
             _, self.sock_port = self.bootstrap()
+            log.debug("Bootstrapped!")
             assert self.sock_port is not None
             self.control = Controller.from_port(port=self.control_port)
         except stem.SocketError:
-            logging.error(
+            log.debug(
                 "Unable to connect to tor's control port: %s" % self.control_port)
             raise Exception
 
@@ -74,7 +104,7 @@ class CtlUtil:
         for domain in list(self.domains.keys()):
             response = dns.resolver.resolve(domain)
             for record in response:
-                logging.debug("Domain %s maps to %s." %
+                log.debug("Domain %s maps to %s." %
                               (domain, record.address))
                 self.domains[domain].append(record.address)
 
@@ -98,7 +128,7 @@ class CtlUtil:
 
     def bootstrap(self):
         ports = {}
-        # partial_parse_log_lines = functools.partial(parse_log_lines, ports)
+        partial_parse_log_lines = functools.partial(parse_log_lines, ports)
         try:
             proc = stem.process.launch_tor_with_config(
                 config={
@@ -118,9 +148,9 @@ class CtlUtil:
                 take_ownership=True,
                 completion_percent=75,
             )
-            print("Successfully started Tor process (PID=%d)." % proc.pid)
+            log.debug("Successfully started Tor process (PID=%d)." % proc.pid)
         except OSError as err:
-            print("Couldn't launch Tor: %s.  Maybe try again?" % err)
+            log.debug("Couldn't launch Tor: %s.  Maybe try again?" % err)
             return None, None
 
         return ports["socks"], ports["control"]
@@ -184,10 +214,10 @@ class CtlUtil:
                 bandwidth = int(measurement.get('bw', 0))
                 self.bandwidths[fingerprint] = bandwidth
         except Exception as e:
-            logging.warning("Failed to get bandwidths!", e)
+            log.warning("Failed to get bandwidths!", e)
 
     def get_version_type(self, fingerprint):
-        print("get_version_type")
+        log.debug("get_version_type")
         version_list = self.control.get_info("status/version/recommended", "").split(',')
         client_version = self.control.get_version(fingerprint)
 
@@ -219,23 +249,23 @@ class CtlUtil:
             try:
                 ipv4 = sock.resolve(domain)
             except error.SOCKSv5Error as err:
-                logging.debug("Exit relay %s could not resolve IPv4 address for "
+                log.debug("Exit relay %s could not resolve IPv4 address for "
                               "\"%s\" because: %s" % (exit, domain, err))
                 return False
             except socket.timeout as err:
-                logging.debug(
+                log.debug(
                     "Socket over exit relay %s timed out: %s" % (exit, err))
                 return False
             except EOFError as err:
-                logging.debug("EOF error: %s" % err)
+                log.debug("EOF error: %s" % err)
                 return False
 
             if ipv4 not in self.domains[domain]:
-                logging.critical("Exit relay %s returned unexpected IPv4 address %s "
+                log.critical("Exit relay %s returned unexpected IPv4 address %s "
                                  "for domain %s" % (exit, ipv4, domain))
                 return False
             else:
-                logging.debug("IPv4 address of domain %s as expected for %s." %
+                log.debug("IPv4 address of domain %s as expected for %s." %
                               (domain, exit))
 
         return True
@@ -246,7 +276,7 @@ class CtlUtil:
         elif isinstance(event, stem.response.events.StreamEvent):
             self.new_stream(event)
         else:
-            logging.warning("Received unexpected event %s." % str(event))
+            log.warning("Received unexpected event %s." % str(event))
 
     def new_circuit(self, circ_event):
         if circ_event.status in [CircStatus.FAILED]:
@@ -261,7 +291,7 @@ class CtlUtil:
 
         last_hop = circ_event.path[-1]
         exit_fingerprint = last_hop[0]
-        logging.debug("Circuit for exit relay \"%s\" is built.  "
+        log.debug("Circuit for exit relay \"%s\" is built.  "
                       "Now invoking probing module." % exit_fingerprint)
 
         def dns_detector():
@@ -270,11 +300,11 @@ class CtlUtil:
                 with torsocks.MonkeyPatchedSocket(self.queue, circ_event.id):
                     flag = self.resolve_exit()
             except (error.SOCKSv5Error, socket.error) as err:
-                logging.info(err)
+                log.info(err)
             except KeyboardInterrupt:
                 pass
             finally:
-                logging.debug("Informing event handler that module finished.")
+                log.debug("Informing event handler that module finished.")
                 self.queue.put((circ_event.id, None, flag, exit_fingerprint))
 
         proc = multiprocessing.Process(target=dns_detector)
@@ -287,11 +317,11 @@ class CtlUtil:
 
         port = get_source_port(str(stream_event))
         if not port:
-            logging.warning("Couldn't extract source port from stream "
+            log.warning("Couldn't extract source port from stream "
                         "event: %s" % str(stream_event))
             return
         
-        logging.debug("Adding attacher for new stream %s." % stream_event.id)
+        log.debug("Adding attacher for new stream %s." % stream_event.id)
         self.attach_stream_to_circuit_prepare(port, stream_id=stream_event.id)
 
     def attach_stream_to_circuit_prepare(self, port, circuit_id=None, stream_id=None):
@@ -317,16 +347,16 @@ class CtlUtil:
                                                        stream_id=stream_id)
                 self.unattached[port] = partially_attached
 
-        logging.debug("Pending attachers: %d." % len(self.unattached))
+        log.debug("Pending attachers: %d." % len(self.unattached))
 
     def _attach(self, stream_id=None, circuit_id=None):
-        logging.debug("Attempting to attach stream %s to circuit %s." %
+        log.debug("Attempting to attach stream %s to circuit %s." %
                   (stream_id, circuit_id))
 
         try:
             self.control.attach_stream(stream_id, circuit_id)
         except stem.OperationFailed as err:
-            logging.warning("Failed to attach stream because: %s" % err)
+            log.warning("Failed to attach stream because: %s" % err)
 
     def queue_reader(self):
         fingerprint_list = []
@@ -334,22 +364,22 @@ class CtlUtil:
             try:
                 circ_id, sockname, flag, exit_fingerprint = self.queue.get()
             except EOFError:
-                logging.debug("IPC queue terminated.")
+                log.debug("IPC queue terminated.")
                 break
 
             if sockname is None:
-                logging.debug("Closing finished circuit %s." % circ_id)
+                log.debug("Closing finished circuit %s." % circ_id)
                 if flag == False:
                     fingerprint_list.append(exit_fingerprint)
                 try:
                     self.control.close_circuit(circ_id)
                 except stem.InvalidArguments as err:
-                    logging.debug("Could not close circuit because: %s" % err)
+                    log.debug("Could not close circuit because: %s" % err)
                 
                 self.finished_streams += 1
                 self.check_finished()
             else:
-                logging.debug("Read from queue: %s, %s" % (circ_id, str(sockname)))
+                log.debug("Read from queue: %s, %s" % (circ_id, str(sockname)))
                 port = int(sockname[1])
                 self.attach_stream_to_circuit_prepare(port, circuit_id=circ_id)
                 self.check_finished()
@@ -374,7 +404,7 @@ class CtlUtil:
                             (self.successful_circuits -
                              self.failed_circuits))
 
-            logging.debug("failedCircs=%d, builtCircs=%d, totalCircs=%d, "
+            log.debug("failedCircs=%d, builtCircs=%d, totalCircs=%d, "
                       "finishedStreams=%d" % (self.failed_circuits,
                                               self.successful_circuits,
                                               self.total_circuits,
@@ -384,7 +414,7 @@ class CtlUtil:
                 self.already_finished = True
 
                 for proc in multiprocessing.active_children():
-                    logging.debug("Terminating remaining PID %d." % proc.pid)
+                    log.debug("Terminating remaining PID %d." % proc.pid)
                     proc.terminate()
 
                 return
