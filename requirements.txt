@@ -4,3 +4,4 @@ stem==1.8.1
 dnspython
 pysocks
 Flask-Mail==0.9.1
+requests

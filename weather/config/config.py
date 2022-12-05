@@ -14,3 +14,6 @@ email_password = 'gobluejays2022'
 
 grace_pd = 48
 threshold = 20
+
+email_api_key = open(os.path.join(path, "api_key"), "r").read().strip()
+email_base_url = open(os.path.join(path, "api_base"), "r").read().strip()

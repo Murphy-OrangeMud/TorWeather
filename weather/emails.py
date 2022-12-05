@@ -45,7 +45,7 @@ _WELCOME_MAIL = "Hello and welcome to Tor!\n\n" +\
     "nodes to improve browsing speed and reliability for our users. "+\
     "Your node is helping to serve the millions of Tor clients out there."+\
     "%sThank you again for your contribution to the Tor network! "+\
-    "We won't send you any further emails unless you subscribe.\n\n"
+    "We won't send you any further emails unless you subscribe.\n\n%s"
 
 _LEGAL_INFO = "Additionally, since you are running as an exit node, you " +\
     "might be interested in Tor's Legal FAQ for Relay Operators "+\

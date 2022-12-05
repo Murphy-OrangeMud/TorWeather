@@ -14,6 +14,7 @@ import stem
 import emails
 import random
 import time
+import requests
 
 from flask import current_app
 from flask_mail import Mail, Message
@@ -261,24 +262,17 @@ def run_all():
     email_list = update_all_routers(ctl_util, email_list)
     email_list = check_all_subs(ctl_util, email_list)
 
-    current_app.config['MAIL_SERVER'] = 'smtp.gmail.com'
-    current_app.config['MAIL_PORT'] = 465
-    current_app.config['MAIL_USERNAME'] = config.email_username
-    current_app.config['MAIL_PASSWORD'] = config.email_password
-    current_app.config['MAIL_USE_TLS'] = False
-    current_app.config['MAIL_USE_SSL'] = True
+    for email in email_list:
+        subj, body, sender,recipients = email
+        requests.post("https://api.mailgun.net/v3/{}/messages".format(config.email_base_url),
+                        auth=("api", config.email_api_key),
+                        data={
+                        "from": sender,
+                        "to": recipients,
+                        "subject": subj,
+                        "text": body
+                    })
 
-    mail = Mail(current_app)
-
-    with mail.connect() as conn:
-        for email in email_list:
-            subj, body, sender, recipients = email
-            msg = Message(subj, 
-                          body=body, 
-                          sender=sender, 
-                          recipients=recipients)
-
-            conn.send(msg)
             
 if __name__ == "__main__":
     run_all()

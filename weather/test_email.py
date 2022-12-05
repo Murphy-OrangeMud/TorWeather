@@ -1,31 +1,28 @@
+import json
 from flask import Flask
 from config import config
 from flask_mail import Mail, Message
-
+import emails
+import requests
+from flask import jsonify
 
 app = Flask(__name__)
 
 @app.route('/', methods=('GET',))
 def send_email():
-    app.config['MAIL_SERVER'] = 'smtp.gmail.com'
-    app.config['MAIL_PORT'] = 465
-    app.config['MAIL_USERNAME'] = config.email_username
-    app.config['MAIL_PASSWORD'] = config.email_password
-    app.config['MAIL_USE_TLS'] = False
-    app.config['MAIL_USE_SSL'] = True
-
-    mail = Mail(app)
-    email_list = ["chengzhiyi2000@gmail.com"]
-
-    with mail.connect() as conn:
-        for email in email_list:
-            subj, body, sender, recipients = email
-            msg = Message(subj, 
-                          body=body, 
-                          sender=sender, 
-                          recipients=recipients)
-
-            conn.send(msg)
+    subject, text, sender, receipient = emails.welcome_tuple(config.email_username, "123", "Murphy", False)
+    print(subject, text)
+    print(config.email_api_key, config.email_base_url)
+    
+    requests.post("https://api.mailgun.net/v3/{}/messages".format(config.email_base_url),
+                    auth=("api", config.email_api_key),
+                    data={
+                        "from": "Tor Weather <noreply@{}>".format(config.email_base_url),
+                        "to": ["chengzhiyi2000@gmail.com"],
+                        "subject": subject,
+                        "text": text
+                    })
+    return jsonify({"Status": "OK"}), 200
 
 if __name__ == '__main__':
     with app.app_context():
