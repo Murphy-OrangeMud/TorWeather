@@ -54,14 +54,14 @@ def parse_log_lines(ports, log_line):
         log.debug("Tor uses port %d as control port." % ports["control"])
 
 
-def bootstrap(control_port):
+def bootstrap():
         ports = {}
         partial_parse_log_lines = functools.partial(parse_log_lines, ports)
         try:
             proc = stem.process.launch_tor_with_config(
                 config={
                     "SOCKSPort": "auto",
-                    "ControlPort": str(control_port),
+                    "ControlPort": "auto",
                     "DataDirectory": "/tmp/exitmap_tor_datadir",
                     "CookieAuthentication": "1",
                     "LearnCircuitBuildTimeout": "0",
@@ -115,7 +115,7 @@ class CtlUtil:
         self.control = None
 
         try:
-            _, self.sock_port = bootstrap(self.control_port)
+            self.sock_port, self.control_port = bootstrap()
             log.debug("Bootstrapped!")
             assert self.sock_port is not None
             self.control = Controller.from_port(port=self.control_port)
@@ -129,7 +129,7 @@ class CtlUtil:
         log.debug("Redirecting Tor's logging to /dev/null.")
         self.control.set_conf("Log", "err file /dev/null")
 
-        self.cached_concensus_path = "/tmp/exitmap_tor_datadir/cached_concensus"
+        self.cached_concensus_path = "/tmp/exitmap_tor_datadir/cached-consensus"
 
         self.destinations = None
         self.domains = {
@@ -225,9 +225,11 @@ class CtlUtil:
         # when bootstrap tor network it's unneceessary to fetch
 
         router_list = []
+        name_list = []
         for desc in stem.descriptor.parse_file(self.cached_concensus_path):
             router_list.append(desc.fingerprint)
-        return router_list
+            name_list.append(desc.nickname)
+        return router_list, name_list
 
     def update_finger_name_list(self):
         downloader = stem.descriptor.remote.DescriptorDownloader()
@@ -309,7 +311,7 @@ class CtlUtil:
             log.warning("Failed to get updated relay descriptors")
             return None
 
-    def resolve_exit(self):  # TODO: whether add fingerprint
+    def resolve_exit(self):
         sock = torsocks.torsocket()
         sock.settimeout(10)
 
@@ -347,6 +349,7 @@ class CtlUtil:
             log.warning("Received unexpected event %s." % str(event))
 
     def new_circuit(self, circ_event):
+        log.debug("Provoke new circuit handler")
         if circ_event.status in [CircStatus.FAILED]:
             log.debug("Circuit failed because: %s" % str(circ_event.reason))
             self.failed_circuits += 1
@@ -387,6 +390,7 @@ class CtlUtil:
         proc.start()
 
     def new_stream(self, stream_event):
+        log.debug("Provoke new stream handler")
         if stream_event.status not in [StreamStatus.NEW, StreamStatus.NEWRESOLVE]:
             return
 
@@ -434,7 +438,7 @@ class CtlUtil:
         except stem.OperationFailed as err:
             log.warning("Failed to attach stream because: %s" % err)
 
-    def queue_reader(self):  # TODO: how to get return value
+    def queue_reader(self):
         fingerprint_list = []
         while True:
             try:

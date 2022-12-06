@@ -52,7 +52,8 @@ def subscribe():
         routers = session.query(Router).filter_by(fingerprint=fingerprint).all()
         if len(routers) > 0:
             router = routers[0]
-            return jsonify({"status": "Error", "msg": 'already_subscribed'}), 401
+            return jsonify({"status": "Warning", 
+            "msg": 'already_subscribed, re-subscribe will not update your preference, please visit /update'}), 200
 
         router = Router(fingerprint=fingerprint, subscriber=email)
         session.add(router)

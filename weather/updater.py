@@ -2,6 +2,7 @@ from datetime import datetime
 from email.message import Message
 import logging
 from smtplib import SMTPException
+from typing import Set
 
 from ctlutil import CtlUtil
 from model import BandwithSub, DeployedDatetime, Subscriber, Router, NodeDownSub, OutdatedVersionSub, DNSFailSub, Session, hours_since
@@ -28,7 +29,8 @@ def check_node_down(ctl_util, email_list):
     subs = session.query(NodeDownSub).all()
 
     for sub in subs:
-        log.debug(sub.router, sub.router.subscriber.email)
+        # log.debug(sub.router_id + " " + sub.emailed)
+        # log.debug(sub.router, sub.router.subscriber.email)
         new_sub = sub
         if sub.router.up:
             if sub.triggered:
@@ -137,8 +139,7 @@ def check_dns_failure(ctl_util, email_list):
     ctl_util.control.add_event_listener(ctl_util.new_event, EventType.CIRC, EventType.STREAM)
     ctl_util.setup_task()
 
-    fingerprints = ctl_util.get_finger_name_list()
-    all_hops = list(fingerprints)
+    all_hops, names = ctl_util.get_finger_name_list()
 
     for sub in subs:
         if not sub.router.exit:
@@ -167,6 +168,7 @@ def check_dns_failure(ctl_util, email_list):
         assert len(hops) > 1
 
         try:
+            log.debug("Trying to build new cirtuit for %s" % fingerprint)
             ctl_util.control.new_circuit(hops)
         except stem.ControllerError as err:
             ctl_util.failed_circuits += 1
@@ -180,7 +182,7 @@ def check_dns_failure(ctl_util, email_list):
 
         time.sleep(3)
 
-    fingerprint_list = ctl_util.finished() #TODO: new thread
+    fingerprint_list = ctl_util.finished()
     for fpr in fingerprint_list:
         router = Router.query.filter_by(fingerprint=fpr).first()
         recipient = router.subscriber.email
@@ -189,84 +191,48 @@ def check_dns_failure(ctl_util, email_list):
             recipient, fingerprint, name)
         email_list.append(email)
 
+    return email_list
+
 
 def check_all_subs(ctl_util, email_list):
-    check_node_down(ctl_util, email_list)
-    check_version(ctl_util, email_list)
-    check_low_bandwith(ctl_util, email_list)
-    check_dns_failure(ctl_util, email_list)
+    email_list = check_node_down(ctl_util, email_list)
+    email_list = check_version(ctl_util, email_list)
+    email_list = check_low_bandwith(ctl_util, email_list)
+    log.debug("Now we have %d emails" % len(email_list))
+    #email_list = check_dns_failure(ctl_util, email_list)
+    log.debug("Now we have %d emails" % len(email_list))
+    return email_list
 
 
 def update_all_routers(ctl_util, email_list):
-    deployed_query = session.query(DeployedDatetime).all()
-    if len(deployed_query) == 0:
-        deployed = datetime.now()
-        session.add(DeployedDatetime(deployed))
-        session.commit()
-    else:
-        deployed = deployed_query[0].deployed
-
-    if (datetime.now() - deployed).days < 2:
-        fully_deployed = False
-    else:
-        fully_deployed = True
-
+    finger_list, name_list = ctl_util.get_finger_name_list()
     router_set = session.query(Router).all()
     for router in router_set:
         if (datetime.now() - router.last_seen).days > 365:
             session.delete(router)
         else:
-            new_router = router
+            new_router = Router(name=router.name, fingerprint=router.fingerprint, welcomed=router.welcomed)
             new_router.up = False
+            if new_router.fingerprint in finger_list:
+                new_router.up = True
+                new_router.exit = ctl_util.is_exit(new_router.fingerprint)
+                log.debug(new_router.exit)
+                new_router.last_seen = datetime.now()
+                if new_router.welcomed == False:
+                    recipient = new_router.subscriber_id
+                    is_exit = new_router.exit
+                    if not recipient == "":
+                        email = emails.welcome_tuple(recipient, new_router.fingerprint, new_router.name, is_exit)
+                        email_list.append(email)
+                    new_router.welcomed = True
+
+            log.debug(new_router.fingerprint)
             session.delete(router)
             session.add(new_router)
 
         session.commit()
 
-    finger_name = ctl_util.get_finger_name_list()
-
-    for router in finger_name:
-        finger = router[0]
-        name = router[1]
-
-        router_data = None
-        try:
-            router_data = session.query(Router).filter_all(fingerprint=finger).first()
-            new_router_data = router_data
-            session.delete(router_data)
-            session.commit()
-        except:
-            if fully_deployed:
-                router_data = Router(name=name, fingerprint=finger, welcomed=False)
-            else:
-                router_data = Router(name=name, fingerprint=finger, welcomed=True)
-
-        new_router_data = router_data
-        new_router_data.last_seen = datetime.now()
-        new_router_data.name = name
-        new_router_data.up = True
-        new_router_data.exit = ctl_util.is_exit(finger)
-
-        if router_data.welcomed == False:
-            if finger in ctl_util.get_finger_name_list():
-                recipient = ctl_util.get_email(finger)
-                is_exit = ctl_util.is_exit(finger)
-                if not recipient == "":
-                    email = emails.welcome_tuple(recipient, finger, name, is_exit)
-                    email_list.append(email)
-
-                new_router_data.welcomed = True
-                new_router_data.exit = is_exit
-                session.add(new_router_data)
-                session.commit()
-            else:
-                recipient = ctl_util.get_email(finger)
-                if not recipient == "":
-                    email = emails.not_found_tuple(recipient, finger, name)
-                    email_list.append(email)
-        else:
-            session.add(new_router_data)
-            session.commit()
+    log.debug("Finished updating routers, discovering %d vulnerabilities" % len(email_list))
 
     return email_list
 
@@ -283,15 +249,16 @@ def run_all():
     email_list = check_all_subs(ctl_util, email_list)
 
     for email in email_list:
-        subj, body, sender,recipients = email
-        requests.post("https://api.mailgun.net/v3/{}/messages".format(config.email_base_url),
+        subj, body, sender, recipients = email
+        resp = requests.post("https://api.mailgun.net/v3/{}/messages".format(config.email_base_url),
                         auth=("api", config.email_api_key),
-                        data={
+                        json={
                         "from": sender,
                         "to": recipients,
                         "subject": subj,
                         "text": body
                     })
+        print(resp.content)
 
             
 if __name__ == "__main__":

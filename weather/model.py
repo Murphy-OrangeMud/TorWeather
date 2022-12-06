@@ -25,7 +25,7 @@ def get_rand_string():
     r = base64.urlsafe_b64encode(os.urandom(18))
 
     if r.endswith(bytes("-", encoding='utf-8')):
-        r = r.replace("-", "x")
+        r = r.replace(bytes("-", encoding='utf-8'), bytes("x", encoding='utf-8'))
     return r
 
 def hours_since(time):
@@ -102,13 +102,13 @@ class Subscription(Base):
     router_id = Column(String, ForeignKey(Router.fingerprint))
     emailed = Column(Boolean)
 
-    # subscriber_id = relation('Subscriber', foreign_keys='Subscriber.email')
-    # router_id = relation('Router', foreign_keys='Rrouer.fingerprint')
+    # subscriber = relation('Subscriber', foreign_keys='Subscriber.email')
+    # router = relation('Router', back_populates='subscriptions')
 
     def __init__(self, router, emailed=False):
         super().__init__()
         self.id = get_rand_string()
-        self.router_id = router
+        self.router = router
         self.emailed = emailed
 
 
