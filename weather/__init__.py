@@ -264,7 +264,7 @@ def update():
 if __name__ == "__main__":
     init_db()
     with app.app_context():
-        app.run(debug=False)
+        app.run(debug=False, host='0.0.0.0')
         
     # session.close()
 
