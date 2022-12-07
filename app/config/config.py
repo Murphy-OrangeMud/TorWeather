@@ -6,7 +6,7 @@ authenticator = open(os.path.join(path, "auth_token"), "r").read().strip()
 sql_alchemy_uri = "sqlite:////tmp/test.db"
 
 # TBD
-base_url = "https://127.0.0.1:5000"
+base_url = "https://143.244.159.29/"
 
 grace_pd = 48
 threshold = 20
