@@ -5,7 +5,7 @@ from smtplib import SMTPException
 from typing import Set
 
 from ctlutil import CtlUtil
-from model import BandwithSub, DeployedDatetime, Subscriber, Router, NodeDownSub, OutdatedVersionSub, DNSFailSub, Session, hours_since
+from model import BandwithSub, Subscription,DeployedDatetime, Subscriber, Router, NodeDownSub, OutdatedVersionSub, DNSFailSub, Session, hours_since
 from config import config
 
 from stem.control import EventType
@@ -29,19 +29,16 @@ def check_node_down(ctl_util, email_list):
     subs = session.query(NodeDownSub).all()
 
     for sub in subs:
-        # log.debug(sub.router_id + " " + sub.emailed)
-        # log.debug(sub.router, sub.router.subscriber.email)
-        new_sub = sub
         if sub.router.up:
             if sub.triggered:
-                new_sub.triggered = False
-                new_sub.emailed = False
-                new_sub.last_changed = datetime.now()
+                sub.triggered = False
+                sub.emailed = False
+                sub.last_changed = datetime.now()
 
         else:
             if not sub.triggered:
-                new_sub.triggered = True
-                new_sub.last_changed = datetime.now()
+                sub.triggered = True
+                sub.last_changed = datetime.now()
 
             if sub.triggered and (hours_since(sub.last_changed) >= sub.grace_pd) and sub.emailed == False:
                 recipient = sub.router.subscriber.email
@@ -53,10 +50,8 @@ def check_node_down(ctl_util, email_list):
                                                 name, grace_pd)
 
                 email_list.append(email)
-                new_sub.emailed = True
+                sub.emailed = True
 
-        session.delete(sub)
-        session.add(new_sub)
         session.commit()
 
     return email_list
@@ -70,7 +65,6 @@ def check_low_bandwith(ctl_util, email_list):
 
     for sub in subs:
         fingerprint = str(sub.router.fingerprint)
-        new_sub = sub
 
         bandwidth = ctl_util.get_bandwidth(fingerprint)
         if bandwidth < 0:
@@ -84,12 +78,10 @@ def check_low_bandwith(ctl_util, email_list):
                                                     fingerprint, name, bandwidth, sub.threshold)
 
                 email_list.append(email)
-                new_sub.emailed = True
+                sub.emailed = True
         else:
-            new_sub.emailed = False
+            sub.emailed = False
 
-        session.delete(sub)
-        session.add(new_sub)
         session.commit()
 
     return email_list
@@ -102,30 +94,26 @@ def check_version(ctl_util, email_list):
     for sub in subs:
         fingerprint = str(sub.router.fingerprint)
         version_type = 'OBSOLETE'  # TODO: verify and add "get_version_type"
-        new_sub = sub
 
         if version_type != 'ERROR':
             if version_type == 'OBSOLETE':
                 if sub.emailed == False:
                     fingerprint = sub.router.fingerprint
                     name = sub.router.name
-                    recipient = sub.router.subscriber.email
+                    recipient = sub.router.subscriber_id
                     email = emails.version_tuple(recipient,
                                                 fingerprint,
                                                 name,
                                                 version_type)
 
                     email_list.append(email)
-                    new_sub.emailed = True
+                    sub.emailed = True
 
             else:
-                new_sub.emailed = False
+                sub.emailed = False
         else:
             log.info("Couldn't parse the version relay %s is running"
                             % str(sub.subscriber.router.fingerprint))
-
-        session.delete(sub)
-        session.add(new_sub)
         session.commit()
 
     return email_list
@@ -211,26 +199,22 @@ def update_all_routers(ctl_util, email_list):
         if (datetime.now() - router.last_seen).days > 365:
             session.delete(router)
         else:
-            new_router = Router(name=router.name, fingerprint=router.fingerprint, welcomed=router.welcomed)
-            new_router.up = False
-            if new_router.fingerprint in finger_list:
-                new_router.up = True
-                new_router.exit = ctl_util.is_exit(new_router.fingerprint)
-                log.debug(new_router.exit)
-                new_router.last_seen = datetime.now()
-                if new_router.welcomed == False:
-                    recipient = new_router.subscriber_id
-                    is_exit = new_router.exit
+            router.up = False
+            if router.fingerprint in finger_list:
+                router.up = True
+                router.exit = ctl_util.is_exit(router.fingerprint)
+                router.last_seen = datetime.now()
+                if router.welcomed == False:
+                    recipient = router.subscriber_id
+                    is_exit = router.exit
                     if not recipient == "":
-                        email = emails.welcome_tuple(recipient, new_router.fingerprint, new_router.name, is_exit)
+                        email = emails.welcome_tuple(recipient, router.fingerprint, router.name, is_exit)
                         email_list.append(email)
-                    new_router.welcomed = True
+                    router.welcomed = True
 
-            log.debug(new_router.fingerprint)
-            session.delete(router)
-            session.add(new_router)
+            session.commit()
 
-        session.commit()
+        # session.commit()
 
     log.debug("Finished updating routers, discovering %d vulnerabilities" % len(email_list))
 
@@ -250,9 +234,10 @@ def run_all():
 
     for email in email_list:
         subj, body, sender, recipients = email
+        print(sender, recipients)
         resp = requests.post("https://api.mailgun.net/v3/{}/messages".format(config.email_base_url),
                         auth=("api", config.email_api_key),
-                        json={
+                        data={
                         "from": sender,
                         "to": recipients,
                         "subject": subj,

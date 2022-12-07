@@ -64,12 +64,13 @@ def subscribe():
                 grace_pd = json["node_down_grace_pd"]
             except:
                 grace_pd = config.grace_pd
-            node_down_sub = NodeDownSub(router=fingerprint, grace_pd=grace_pd)
+            node_down_sub = NodeDownSub(router=router, grace_pd=grace_pd)
+            print(node_down_sub)
             session.add(node_down_sub)
             session.commit()
 
         if get_version:
-            version_sub = OutdatedVersionSub(router=fingerprint)
+            version_sub = OutdatedVersionSub(router=router, )
             session.add(version_sub)
             session.commit()
 
@@ -79,12 +80,12 @@ def subscribe():
             except:
                 band_low_threshold = 20
             band_low_sub = BandwithSub(
-                router=fingerprint, threshold=band_low_threshold)
+                router=router, threshold=band_low_threshold)
             session.add(band_low_sub)
             session.commit()
 
         if get_dns_fail:
-            dns_sub = DNSFailSub(router=fingerprint)
+            dns_sub = DNSFailSub(router=router)
             session.add(dns_sub)
             session.commit()
 
@@ -261,9 +262,10 @@ def update():
 
 
 if __name__ == "__main__":
-    init_db()
+    
 
     with app.app_context():
+        init_db()
         app.run(debug=True)
         
     # session.close()

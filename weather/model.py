@@ -46,8 +46,9 @@ class Router(Base):
     exit = Column(Boolean)
 
     subscriber_id = Column(String, ForeignKey('subscriber.email'))
+    subscriber = relation("Subscriber", backref='routers', lazy=False)
 
-    subscriptions = relation('Subscription', backref='router', lazy='dynamic')
+    #subscriptions = relation('Subscription', backref='router', lazy=False)
 
     def __init__(self, fingerprint=None,
                        subscriber=None,
@@ -68,7 +69,7 @@ class Router(Base):
         self.subscriber_id = subscriber
 
     def __repr__(self):
-        return self.name + ": " + self._spaced_fingerprint()
+        return "<Router: %s %s %s %s %s %s>" % (self.fingerprint, self.name, self.welcomed, self.last_seen, self.up, self.exit)
 
     def _spaced_fingerprint(self):
         return insert_fingerprint_spaces(self.fingerprint)
@@ -82,7 +83,7 @@ class Subscriber(Base):
     # router = Column(String, ForeignKey(Router.fingerprint), primary_key=True)
     sub_date = Column(DateTime)
 
-    routers = relation('Router', backref='subscriber', lazy='dynamic')
+    # routers = relation('Router', backref='subscriber', lazy=False)
 
     def __init__(self, email=None):
         super().__init__()
@@ -97,53 +98,93 @@ class Subscription(Base):
 
     __tablename__ = "subscription"
 
-    id = Column(String, primary_key=True, unique=True)
+    id = Column(String, primary_key=True, unique=True, default=get_rand_string)
     # subscriber_id = Column(String, ForeignKey(Subscriber.email))
+    router = relation('Router', backref='subscriptions', lazy=False)
     router_id = Column(String, ForeignKey(Router.fingerprint))
-    emailed = Column(Boolean)
+    emailed = Column(Boolean, default=False)
+    type=Column(String)
+
+    __mapper_args__ = {
+        'polymorphic_identity': 'subscriptions',
+        'with_polymorphic': '*',
+        "polymorphic_on": type
+    }
+
+    def __repr__(self):
+        return "<Subscription: %s %s %s %s>" % (self.id, self.router_id, self.emailed, self.router)
 
     # subscriber = relation('Subscriber', foreign_keys='Subscriber.email')
     # router = relation('Router', back_populates='subscriptions')
 
+    """
     def __init__(self, router, emailed=False):
         super().__init__()
         self.id = get_rand_string()
         self.router = router
         self.emailed = emailed
+    """
 
 
 class NodeDownSub(Subscription):
-    triggered = Column(Boolean)
+    triggered = Column(Boolean, default=False)
     grace_pd = Column(Integer)
-    last_changed = Column(DateTime)
+    last_changed = Column(DateTime, default=datetime.now)
 
+    """
     def __init__(self, router, emailed=False, grace_pd=config.grace_pd, last_changed=None):
         super().__init__(router, emailed)
         self.grace_pd = grace_pd
         if last_changed is None:
             last_changed = datetime.now()
         self.last_changed = last_changed
+    """
+
+    __mapper_args__ = {
+        'polymorphic_identity': 'nodedownsub',
+        'with_polymorphic': '*'
+    }
 
 
 class OutdatedVersionSub(Subscription):
-    notify_type = Column(String)
+    notify_type = Column(String, default='OBSOLETE')
 
+    """
     def __init__(self, router, emailed=False, notify_type='OBSOLETE'):
         super().__init__(router, emailed)
         self.notify_type = notify_type
+    """
 
+    __mapper_args__ = {
+        'polymorphic_identity': 'outdatedversionsub',
+        'with_polymorphic': '*'
+    }
 
 class BandwithSub(Subscription):
-    threshold = Column(Integer)
+    threshold = Column(Integer, default=20)
 
+    """
     def __init__(self, router, emailed=False, threshold=20):
         super().__init__(router, emailed)
         self.threshold = threshold
+    """
+
+    __mapper_args__ = {
+        'polymorphic_identity': 'bandwithsub',
+        'with_polymorphic': '*'
+    }
 
 
 class DNSFailSub(Subscription):
+    """
     def __init__(self, router, emailed=False):
         super().__init__(router, emailed)
+    """
+
+    __mapper_args__ = {
+        'polymorphic_identity': 'dnsfailsub',
+        'with_polymorphic': '*'
+    }
 
 
 class DeployedDatetime(Base):

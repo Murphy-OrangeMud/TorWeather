@@ -4,7 +4,7 @@ from config import config
 
 
 _SUBJECT_HEADER = '[Tor Weather]'
-_SENDER = config.email_username
+_SENDER = "Tor Weather <noreply@{}>".format(config.email_base_url)
 
 _LOW_BANDWIDTH_SUBJ = 'Low bandwidth!'
 _LOW_BANDWIDTH_MAIL = "This is a Tor Weather Report.\n\n"+\
