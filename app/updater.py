@@ -4,9 +4,9 @@ import logging
 from smtplib import SMTPException
 from typing import Set
 
-from .ctlutil import CtlUtil
-from .model import BandwithSub, Subscription,DeployedDatetime, Subscriber, Router, NodeDownSub, OutdatedVersionSub, DNSFailSub, Session, hours_since
-from .config import config
+from ctlutil import CtlUtil
+from model import BandwithSub, Subscription,DeployedDatetime, Subscriber, Router, NodeDownSub, OutdatedVersionSub, DNSFailSub, Session, hours_since
+from config import config
 
 from stem.control import EventType
 import stem.descriptor
