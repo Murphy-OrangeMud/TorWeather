@@ -10,7 +10,7 @@ from sqlalchemy.orm import relation
 
 import base64
 import os
-from config import config
+from .config import config
 
 engine = create_engine(config.sql_alchemy_uri)
 # db_session = scoped_session(sessionmaker(autocommit=False, autoflush=False, bind=engine))

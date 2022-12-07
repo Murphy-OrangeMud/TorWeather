@@ -1,6 +1,6 @@
-from model import insert_fingerprint_spaces
-from config import url_helper
-from config import config
+from .model import insert_fingerprint_spaces
+from .config import url_helper
+from .config import config
 
 
 _SUBJECT_HEADER = '[Tor Weather]'

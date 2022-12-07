@@ -16,14 +16,14 @@ import stem.descriptor.remote
 from stem import Flag, StreamStatus, CircStatus
 from stem.control import Controller
 import stem.process
-from config import config
+from .config import config
 
 from datetime import datetime
 import dns.resolver
 import torsocks
 import socket
 import error
-from model import hours_since
+from .model import hours_since
 
 log = logging.getLogger(__name__)
 

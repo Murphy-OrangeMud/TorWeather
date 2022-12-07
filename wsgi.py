@@ -1,2 +1,2 @@
-from weather import main as application
+from app import main as application
 
