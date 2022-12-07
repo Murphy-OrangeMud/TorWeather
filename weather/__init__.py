@@ -260,10 +260,13 @@ def update():
         return jsonify({"status": "OK"}), 200
 
 
-if __name__ == "__main__":
+def main():
     init_db()
     with app.app_context():
         app.run(debug=False, host='0.0.0.0')
+
+if __name__ == "__main__":
+    main()
         
     # session.close()
 
