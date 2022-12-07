@@ -172,7 +172,7 @@ def check_dns_failure(ctl_util, email_list):
 
     fingerprint_list = ctl_util.finished()
     for fpr in fingerprint_list:
-        router = Router.query.filter_by(fingerprint=fpr).first()
+        router = session.query(Router).filter_by(fingerprint=fpr).first()
         recipient = router.subscriber.email
         name = router.name
         email = emails.dns_tuple(
@@ -187,7 +187,7 @@ def check_all_subs(ctl_util, email_list):
     email_list = check_version(ctl_util, email_list)
     email_list = check_low_bandwith(ctl_util, email_list)
     log.debug("Now we have %d emails" % len(email_list))
-    #email_list = check_dns_failure(ctl_util, email_list)
+    email_list = check_dns_failure(ctl_util, email_list)
     log.debug("Now we have %d emails" % len(email_list))
     return email_list
 

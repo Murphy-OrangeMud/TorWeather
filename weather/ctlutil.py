@@ -115,19 +115,19 @@ class CtlUtil:
         self.control = None
 
         try:
-            #self.sock_port, self.control_port = bootstrap()
+            self.sock_port, self.control_port = bootstrap()
             log.debug("Bootstrapped!")
-            #assert self.sock_port is not None
-            #self.control = Controller.from_port(port=self.control_port)
+            assert self.sock_port is not None
+            self.control = Controller.from_port(port=self.control_port)
         except stem.SocketError:
             log.debug(
                 "Unable to connect to tor's control port: %s" % self.control_port)
             raise Exception
 
-        #self.control.authenticate(self.authenticator)
+        self.control.authenticate(self.authenticator)
 
         log.debug("Redirecting Tor's logging to /dev/null.")
-        #self.control.set_conf("Log", "err file /dev/null")
+        self.control.set_conf("Log", "err file /dev/null")
 
         self.cached_concensus_path = "/tmp/exitmap_tor_datadir/cached-consensus"
 
