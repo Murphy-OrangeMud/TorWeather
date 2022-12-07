@@ -111,7 +111,7 @@ class App extends React.Component {
         return
       }
 
-    fetch("http://127.0.0.1:5000/", {
+    fetch("http://143.244.159.29:80/", {
       method: 'POST', 
       body: JSON.stringify({
         "email": this.state.email_1,
