@@ -65,7 +65,6 @@ def subscribe():
             except:
                 grace_pd = config.grace_pd
             node_down_sub = NodeDownSub(router=router, grace_pd=grace_pd)
-            print(node_down_sub)
             session.add(node_down_sub)
             session.commit()
 
