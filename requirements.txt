@@ -5,3 +5,4 @@ dnspython
 pysocks
 Flask-Mail==0.9.1
 requests
+uwsgi
