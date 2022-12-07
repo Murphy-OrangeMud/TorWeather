@@ -93,7 +93,7 @@ def check_version(ctl_util, email_list):
 
     for sub in subs:
         fingerprint = str(sub.router.fingerprint)
-        version_type = 'OBSOLETE'  # TODO: verify and add "get_version_type"
+        version_type = 'OBSOLETE' 
 
         if version_type != 'ERROR':
             if version_type == 'OBSOLETE':
