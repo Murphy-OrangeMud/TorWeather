@@ -136,7 +136,7 @@ def check_dns_failure(ctl_util, email_list):
             recipient = sub.router.subscriber.email
             name = sub.router.name
             email = emails.dns_tuple(
-                recipient, fingerprint, name)
+                recipient, sub.router.fingerprint, name)
             email_list.append(email)
             continue
 
